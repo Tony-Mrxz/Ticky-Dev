@@ -1391,7 +1391,9 @@ class SettingsWindow(QWidget):
                 "https://console.groq.com/keys",
                 "Groq Console",
                 "Create API Key",
-                "Uses Llama 3 for lightning-fast latency open-source replies."
+                "Available models:<br>"
+                "<b>Reasoning:</b> qwen-qwq-32b, qwen3-32b<br>"
+                "<b>Text-to-Text:</b> llama-3.3-70b-versatile, llama-4-scout-17b-16e-instruct, meta-llama/llama-4-maverick-17b-128e-instruct"
             ),
             "OpenRouter": (
                 "https://openrouter.ai/keys",
@@ -1421,7 +1423,7 @@ class SettingsWindow(QWidget):
                 "Gemini": "gemini-1.5-flash",
                 "OpenAI": "gpt-4o-mini",
                 "Claude": "claude-3-5-sonnet-20241022",
-                "Groq": "llama3-8b-8192",
+                "Groq": "llama-3.3-70b-versatile",
                 "OpenRouter": "meta-llama/llama-3-8b-instruct:free"
             }
             self.input_ai_model.setText(defaults.get(provider_name, "gemini-1.5-flash"))
