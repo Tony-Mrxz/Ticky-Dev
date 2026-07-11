@@ -89,12 +89,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Delete existing 'latest' tag & release if they exist
+          # Delete existing 'latest' release and both remote & local tags
           gh release delete latest --yes || true
           git push origin :refs/tags/latest || true
-          
-          # Create new release
+          git tag -d latest || true
+
+          # Create new release pointing at current HEAD
           gh release create latest dist/* \
             --title "Ticky Latest Build" \
             --notes "Automated continuous delivery build of the latest commit on main branch." \
-            --prerelease
+            --prerelease \
+            --target ${{ github.sha }}
