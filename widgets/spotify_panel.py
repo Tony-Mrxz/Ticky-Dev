@@ -220,11 +220,11 @@ class SpotifyPanel(QWidget):
             self.setFixedWidth(340)
             self.layout().setContentsMargins(10, 10, 10, 10)
         else:
-            self.setFixedWidth(280)
+            self.setFixedWidth(320)
             self.layout().setContentsMargins(0, 10, 0, 0)
 
     def init_ui(self):
-        self.setFixedWidth(280)
+        self.setFixedWidth(320)
         
         # Panel main wrapper layout (adds 10px top spacing when expanded)
         main_layout = QVBoxLayout(self)
