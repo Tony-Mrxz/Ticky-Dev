@@ -3,5 +3,4 @@ __pycache__/
 *.pyc
 build/
 output.log
-version_info.txt
 generate_ico.py
