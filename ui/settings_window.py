@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signa
 from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QGraphicsDropShadowEffect, 
                                QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea,
-                               QGraphicsOpacityEffect)
+                               QGraphicsOpacityEffect, QComboBox)
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from styles import theme, qss
 from utils import config
@@ -949,14 +949,7 @@ class SettingsWindow(QWidget):
         lbl_ai_guide_title.setStyleSheet("font-weight: bold; font-size: 11px;")
         ai_guide_inner.addWidget(lbl_ai_guide_title)
         
-        self.lbl_ai_guide = QLabel(
-            "<b>Setup Instructions:</b><br>"
-            "1. Visit <a href='https://aistudio.google.com/' style='color:#FF9F0A;'>Google AI Studio</a> and sign in.<br>"
-            "2. Click <b>Get API Key</b> and create a new API Key.<br>"
-            "3. Paste the API Key below to enable the chat panel.<br>"
-            "This integration uses Gemini 1.5 Flash for rapid, intelligent answers.",
-            ai_guide_section
-        )
+        self.lbl_ai_guide = QLabel(ai_guide_section)
         self.lbl_ai_guide.setObjectName("SettingDescription")
         self.lbl_ai_guide.setOpenExternalLinks(True)
         self.lbl_ai_guide.setWordWrap(True)
@@ -976,17 +969,66 @@ class SettingsWindow(QWidget):
         ai_creds_inner = QVBoxLayout(ai_creds_section)
         ai_creds_inner.setContentsMargins(12, 10, 12, 10)
         
-        lbl_ai_creds_title = QLabel("Gemini API Key", ai_creds_section)
-        lbl_ai_creds_title.setObjectName("SettingLabel")
-        lbl_ai_creds_title.setStyleSheet("font-weight: bold; font-size: 11px;")
-        ai_creds_inner.addWidget(lbl_ai_creds_title)
+        # Provider Row
+        provider_row = QHBoxLayout()
+        lbl_provider = QLabel("AI Provider:", ai_creds_section)
+        lbl_provider.setObjectName("SettingLabel")
+        lbl_provider.setStyleSheet("font-weight: bold; font-size: 11px;")
         
-        self.input_gemini_key = QLineEdit(ai_creds_section)
-        self.input_gemini_key.setObjectName("SpotifyInput") # Reuse styling
-        self.input_gemini_key.setPlaceholderText("Paste your Gemini API Key here")
-        self.input_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.input_gemini_key.setText(config.load_gemini_api_key())
-        ai_creds_inner.addWidget(self.input_gemini_key)
+        self.combo_provider = QComboBox(ai_creds_section)
+        self.combo_provider.addItems(["Gemini", "OpenAI", "Claude", "Groq", "OpenRouter"])
+        self.combo_provider.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(0, 0, 0, 60);
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                padding: 4px 8px;
+                min-width: 120px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+        """)
+        self.combo_provider.setCurrentText(config.load_ai_provider())
+        self.combo_provider.currentTextChanged.connect(self.on_ai_provider_changed)
+        
+        provider_row.addWidget(lbl_provider)
+        provider_row.addWidget(self.combo_provider, 0, Qt.AlignmentFlag.AlignRight)
+        ai_creds_inner.addLayout(provider_row)
+        
+        # Spacer Line
+        sep = QFrame(ai_creds_section)
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"background-color: {theme.BORDER_COLOR}; max-height: 1px;")
+        ai_creds_inner.addWidget(sep)
+        
+        # API Key Row
+        lbl_ai_key_title = QLabel("API Key", ai_creds_section)
+        lbl_ai_key_title.setObjectName("SettingLabel")
+        lbl_ai_key_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_creds_inner.addWidget(lbl_ai_key_title)
+        
+        self.input_ai_key = QLineEdit(ai_creds_section)
+        self.input_ai_key.setObjectName("SpotifyInput")
+        self.input_ai_key.setPlaceholderText("Paste your API Key here")
+        self.input_ai_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_ai_key.setText(config.load_ai_api_key())
+        ai_creds_inner.addWidget(self.input_ai_key)
+        
+        # Model Row
+        lbl_ai_model_title = QLabel("AI Model", ai_creds_section)
+        lbl_ai_model_title.setObjectName("SettingLabel")
+        lbl_ai_model_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_creds_inner.addWidget(lbl_ai_model_title)
+        
+        self.input_ai_model = QLineEdit(ai_creds_section)
+        self.input_ai_model.setObjectName("SpotifyInput")
+        self.input_ai_model.setPlaceholderText("e.g. gemini-1.5-flash")
+        self.input_ai_model.setText(config.load_ai_model())
+        ai_creds_inner.addWidget(self.input_ai_model)
         
         ai_content_layout.addWidget(ai_guide_section)
         ai_content_layout.addWidget(ai_creds_section)
@@ -999,7 +1041,7 @@ class SettingsWindow(QWidget):
         ai_btn_layout.setSpacing(10)
         ai_btn_layout.setContentsMargins(0, 4, 0, 0)
         
-        self.btn_save_ai = QPushButton("Save API Key", page_ai)
+        self.btn_save_ai = QPushButton("Save Config", page_ai)
         self.btn_save_ai.setStyleSheet(self.get_action_button_style())
         self.btn_save_ai.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save_ai.clicked.connect(self.save_ai_key)
@@ -1008,6 +1050,9 @@ class SettingsWindow(QWidget):
         page_ai_layout.addLayout(ai_btn_layout)
         
         self.stacked_widget.addWidget(page_ai)
+        
+        # Initialize dynamic welcome guide
+        self.on_ai_provider_changed(self.combo_provider.currentText())
         
         content_layout.addWidget(self.stacked_widget)
         
@@ -1306,11 +1351,80 @@ class SettingsWindow(QWidget):
         QTimer.singleShot(1500, lambda: self.btn_save_spotify.setText("Save Credentials"))
 
     def save_ai_key(self):
-        key = self.input_gemini_key.text().strip()
-        config.save_gemini_api_key(key)
+        provider = self.combo_provider.currentText()
+        key = self.input_ai_key.text().strip()
+        model = self.input_ai_model.text().strip()
+        
+        config.save_ai_provider(provider)
+        config.save_ai_api_key(key)
+        config.save_ai_model(model)
+        
         self.btn_save_ai.setText("Saved!")
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: self.btn_save_ai.setText("Save API Key"))
+        QTimer.singleShot(1500, lambda: self.btn_save_ai.setText("Save Config"))
+        
+        # Notify the parent window's AIPanel to update its welcome text
+        if self.parent_window and hasattr(self.parent_window, "ai_panel") and self.parent_window.ai_panel:
+            self.parent_window.ai_panel.update_welcome_text()
+
+    def on_ai_provider_changed(self, provider_name):
+        provider_instructions = {
+            "Gemini": (
+                "https://aistudio.google.com/",
+                "Google AI Studio",
+                "Get API Key",
+                "Uses Gemini 1.5 Flash for rapid, intelligent answers."
+            ),
+            "OpenAI": (
+                "https://platform.openai.com/api-keys",
+                "OpenAI Platform",
+                "Create new secret key",
+                "Uses GPT-4o Mini for advanced reasoning and conversation."
+            ),
+            "Claude": (
+                "https://console.anthropic.com/",
+                "Anthropic Console",
+                "Get API Keys",
+                "Uses Claude 3.5 Sonnet for highly-detailed, smart responses."
+            ),
+            "Groq": (
+                "https://console.groq.com/keys",
+                "Groq Console",
+                "Create API Key",
+                "Uses Llama 3 for lightning-fast latency open-source replies."
+            ),
+            "OpenRouter": (
+                "https://openrouter.ai/keys",
+                "OpenRouter Keys",
+                "Create Key",
+                "Uses open-source models through OpenRouter's unified endpoint."
+            )
+        }
+        
+        inst = provider_instructions.get(provider_name, provider_instructions["Gemini"])
+        link_url, site_name, action_name, description = inst
+        
+        self.lbl_ai_guide.setText(
+            f"<b>Setup Instructions for {provider_name}:</b><br>"
+            f"1. Visit <a href='{link_url}' style='color:#FF9F0A;'>{site_name}</a> and sign in.<br>"
+            f"2. Click <b>{action_name}</b> and create a new key.<br>"
+            f"3. Paste the API Key below.<br>"
+            f"{description}"
+        )
+        
+        # Load saved model or set default for this provider
+        saved_provider = config.load_ai_provider()
+        if provider_name == saved_provider:
+            self.input_ai_model.setText(config.load_ai_model())
+        else:
+            defaults = {
+                "Gemini": "gemini-1.5-flash",
+                "OpenAI": "gpt-4o-mini",
+                "Claude": "claude-3-5-sonnet-20241022",
+                "Groq": "llama3-8b-8192",
+                "OpenRouter": "meta-llama/llama-3-8b-instruct:free"
+            }
+            self.input_ai_model.setText(defaults.get(provider_name, "gemini-1.5-flash"))
 
     def on_demo_mode_toggled(self, checked):
         config.save_spotify_demo_mode(checked)

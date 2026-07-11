@@ -13,35 +13,134 @@ AI_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill=
 SEND_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg>"""
 TRASH_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>"""
 
-class GeminiWorker(QThread):
+class AIWorker(QThread):
     finished = Signal(bool, str)
     
-    def __init__(self, api_key, prompt):
+    def __init__(self, provider, model, api_key, prompt):
         super().__init__()
+        self.provider = provider
+        self.model = model
         self.api_key = api_key
         self.prompt = prompt
         
     def run(self):
         import requests
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [
-                {"parts": [{"text": self.prompt}]}
-            ]
-        }
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=12)
-            if response.status_code == 200:
-                data = response.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                self.finished.emit(True, text.strip())
+        
+        provider = self.provider.lower().strip()
+        model = self.model.strip()
+        api_key = self.api_key.strip()
+        
+        # Fallback to default models if empty
+        if not model:
+            if provider == "gemini":
+                model = "gemini-1.5-flash"
+            elif provider == "openai":
+                model = "gpt-4o-mini"
+            elif provider == "claude":
+                model = "claude-3-5-sonnet-20241022"
+            elif provider == "groq":
+                model = "llama3-8b-8192"
+            elif provider == "openrouter":
+                model = "meta-llama/llama-3-8b-instruct:free"
             else:
-                try:
-                    err_msg = response.json().get("error", {}).get("message", "API Error")
-                except Exception:
-                    err_msg = f"HTTP Error {response.status_code}"
-                self.finished.emit(False, err_msg)
+                model = "gemini-1.5-flash"
+
+        try:
+            if provider == "gemini":
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "contents": [{"parts": [{"text": self.prompt}]}]
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    self.finished.emit(False, err_msg)
+                    
+            elif provider == "openai":
+                url = "https://api.openai.com/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": self.prompt}]
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["choices"][0]["message"]["content"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    self.finished.emit(False, err_msg)
+                    
+            elif provider == "claude":
+                url = "https://api.anthropic.com/v1/messages"
+                headers = {
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                }
+                payload = {
+                    "model": model,
+                    "max_tokens": 1024,
+                    "messages": [{"role": "user", "content": self.prompt}]
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["content"][0]["text"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    self.finished.emit(False, err_msg)
+                    
+            elif provider == "groq":
+                url = "https://api.groq.com/openapi/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": self.prompt}]
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["choices"][0]["message"]["content"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    self.finished.emit(False, err_msg)
+                    
+            elif provider == "openrouter":
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": self.prompt}]
+                }
+                response = requests.post(url, headers=headers, json=payload, timeout=12)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["choices"][0]["message"]["content"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    self.finished.emit(False, err_msg)
+                    
+            else:
+                self.finished.emit(False, f"Unsupported provider: {self.provider}")
         except Exception as e:
             self.finished.emit(False, str(e))
 
@@ -153,7 +252,7 @@ class AIPanel(QWidget):
         card_layout.addWidget(self.scroll, 1)
         
         # Welcome/Disclaimer label
-        self.lbl_welcome = QLabel("👋 Ask Gemini AI anything!", self.card)
+        self.lbl_welcome = QLabel(self.card)
         self.lbl_welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_welcome.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-family: {theme.FONT_FAMILY}; font-size: 10px;")
         self.chat_layout.addWidget(self.lbl_welcome)
@@ -163,7 +262,6 @@ class AIPanel(QWidget):
         input_layout.setSpacing(6)
         
         self.input_field = QLineEdit(self.card)
-        self.input_field.setPlaceholderText("Ask Gemini...")
         self.input_field.setStyleSheet(f"""
             QLineEdit {{
                 background-color: rgba(0, 0, 0, 60);
@@ -203,6 +301,13 @@ class AIPanel(QWidget):
         shadow.setColor(QColor(0, 0, 0, 60))
         shadow.setOffset(0, 2)
         self.card.setGraphicsEffect(shadow)
+        
+        self.update_welcome_text()
+
+    def update_welcome_text(self):
+        provider = config.load_ai_provider()
+        self.lbl_welcome.setText(f"👋 Ask {provider} AI anything!")
+        self.input_field.setPlaceholderText(f"Ask {provider}...")
 
     def get_anim_height(self):
         return self.height()
@@ -224,7 +329,8 @@ class AIPanel(QWidget):
         self.height_anim.stop()
         self.height_anim.setStartValue(self.height())
         if self.is_expanded:
-            self.height_anim.setEndValue(190) # Height of the chat widget card
+            self.update_welcome_text()
+            self.height_anim.setEndValue(190)
         else:
             self.height_anim.setEndValue(0)
         self.height_anim.start()
@@ -245,10 +351,13 @@ class AIPanel(QWidget):
         self.add_bubble(prompt, is_user=True)
         self.input_field.clear()
         
-        # Check API Key
-        api_key = config.load_gemini_api_key()
+        # Load API configurations
+        provider = config.load_ai_provider()
+        model = config.load_ai_model()
+        api_key = config.load_ai_api_key()
+        
         if not api_key:
-            self.add_bubble("⚠️ Gemini API Key not set! Please save your key in Ticky Settings -> AI tab.", is_user=False)
+            self.add_bubble(f"⚠️ API Key not set! Please save your key in Ticky Settings -> AI Chat tab.", is_user=False)
             return
             
         # Add thinking indicator
@@ -256,12 +365,12 @@ class AIPanel(QWidget):
         self.chat_layout.addWidget(self.thinking_bubble)
         self.scroll_to_bottom()
         
-        # Disable buttons while working
+        # Disable inputs while working
         self.btn_send.setEnabled(False)
         self.input_field.setEnabled(False)
         
         # Spawn thread worker
-        self.active_worker = GeminiWorker(api_key, prompt)
+        self.active_worker = AIWorker(provider, model, api_key, prompt)
         self.active_worker.finished.connect(self.on_response_received)
         self.active_worker.start()
 
@@ -286,7 +395,6 @@ class AIPanel(QWidget):
         self.scroll_to_bottom()
 
     def clear_chat(self):
-        # Remove all chat bubbles (except the spacer)
         for i in reversed(range(self.chat_layout.count())):
             item = self.chat_layout.itemAt(i)
             if item and item.widget():
@@ -297,7 +405,6 @@ class AIPanel(QWidget):
         self.chat_layout.addWidget(self.lbl_welcome)
 
     def scroll_to_bottom(self):
-        # Allow layout to adjust first, then scroll
         QTimer.singleShot(50, lambda: self.scroll.verticalScrollBar().setValue(
             self.scroll.verticalScrollBar().maximum()
         ))

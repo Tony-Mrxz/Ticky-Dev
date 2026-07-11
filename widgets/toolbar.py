@@ -192,8 +192,8 @@ class FloatingToolbar(QWidget):
     def init_ui(self):
         # Base dimensions of capsule toolbar - initially collapsed
         self.setFixedHeight(44)
-        self.setMinimumWidth(180)
-        self.setMaximumWidth(180)
+        self.setMinimumWidth(174)
+        self.setMaximumWidth(174)
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 0)
@@ -247,14 +247,14 @@ class FloatingToolbar(QWidget):
         self.toolbar_max_anim.stop()
         
         if not self.is_stopwatch_active:
-            # Expand to 330px
+            # Expand to 318px
             self.stopwatch_anim.setStartValue(self.stopwatch_container.width())
-            self.stopwatch_anim.setEndValue(150)
+            self.stopwatch_anim.setEndValue(144)
             
             self.toolbar_min_anim.setStartValue(self.width())
-            self.toolbar_min_anim.setEndValue(330)
+            self.toolbar_min_anim.setEndValue(318)
             self.toolbar_max_anim.setStartValue(self.width())
-            self.toolbar_max_anim.setEndValue(330)
+            self.toolbar_max_anim.setEndValue(318)
             
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()
@@ -270,14 +270,14 @@ class FloatingToolbar(QWidget):
             self.is_stopwatch_active = True
             self.btn_timer.setActive(True)
         else:
-            # Collapse back to 180px
+            # Collapse back to 174px
             self.stopwatch_anim.setStartValue(self.stopwatch_container.width())
             self.stopwatch_anim.setEndValue(0)
             
             self.toolbar_min_anim.setStartValue(self.width())
-            self.toolbar_min_anim.setEndValue(180)
+            self.toolbar_min_anim.setEndValue(174)
             self.toolbar_max_anim.setStartValue(self.width())
-            self.toolbar_max_anim.setEndValue(180)
+            self.toolbar_max_anim.setEndValue(174)
             
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()

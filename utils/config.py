@@ -199,3 +199,28 @@ def load_gemini_api_key():
 def save_gemini_api_key(api_key):
     """Save Gemini API Key."""
     save_config({"gemini_api_key": api_key})
+
+def load_ai_provider(default_value="Gemini"):
+    """Load selected AI Provider."""
+    return load_config().get("ai_provider", default_value)
+
+def save_ai_provider(value):
+    """Save selected AI Provider."""
+    save_config({"ai_provider": value})
+
+def load_ai_api_key():
+    """Load saved AI API Key (falls back to Gemini API key for backward compatibility)."""
+    data = load_config()
+    return data.get("ai_api_key", data.get("gemini_api_key", ""))
+
+def save_ai_api_key(value):
+    """Save AI API Key."""
+    save_config({"ai_api_key": value})
+
+def load_ai_model(default_value="gemini-1.5-flash"):
+    """Load selected AI Model."""
+    return load_config().get("ai_model", default_value)
+
+def save_ai_model(value):
+    """Save selected AI Model."""
+    save_config({"ai_model": value})
