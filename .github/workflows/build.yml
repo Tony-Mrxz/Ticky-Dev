@@ -81,7 +81,7 @@ jobs:
 
       - name: Prepare assets
         run: |
-          mkdir dist
+          mkdir -p dist
           mv release-assets/windows/Ticky.exe dist/Ticky.exe
           mv release-assets/macos/Ticky.dmg dist/Ticky.dmg
 
