@@ -948,6 +948,7 @@ class SettingsWindow(QWidget):
         outer_container_layout.addWidget(self.container)
         
         self._apply_fonts()
+        self.update_spotify_status_ui()
         
         # Default active page: General
         self.switch_page(0)
@@ -1224,6 +1225,9 @@ class SettingsWindow(QWidget):
         c_id, c_secret = config.load_spotify_credentials()
         access, refresh = config.load_spotify_tokens()
         demo = config.load_spotify_demo_mode()
+        
+        has_creds = bool(c_id.strip() and c_secret.strip())
+        self.btn_connect_spotify.setEnabled(has_creds)
         
         if demo:
             self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
