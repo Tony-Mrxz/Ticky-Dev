@@ -179,14 +179,14 @@ class MainWindow(QWidget):
         QApplication.instance().installEventFilter(self)
 
     def init_ui(self):
-        # Allow height to wrap contents dynamically, fixed width 350, minimum height 150
-        self.setFixedWidth(350)
+        # Allow height to wrap contents dynamically, fixed width 360, minimum height 150
+        self.setFixedWidth(360)
         self.setMinimumHeight(150)
         
         # Central container widget to apply style and rounded corners
         self.container = QWidget(self)
         self.container.setObjectName("MainWindowContainer")
-        self.container.setFixedWidth(350)
+        self.container.setFixedWidth(360)
         self.container.setMinimumHeight(150)
         
         # Enable dynamic size resizing on container and main window
@@ -467,8 +467,8 @@ class MainWindow(QWidget):
         if hasattr(self, '_orig_margins'):
             self.container.layout().setContentsMargins(*self._orig_margins)
             self.container.layout().setSpacing(self._orig_spacing)
-        self.setFixedWidth(350)
-        self.container.setFixedWidth(350)
+        self.setFixedWidth(360)
+        self.container.setFixedWidth(360)
         
         self.container.show()
         self.clock_widget.show()
@@ -518,9 +518,9 @@ class MainWindow(QWidget):
             if item and item.widget():
                 item.widget().hide()
                 
-        # Setup compact dimensions and layout - set width to 350px
-        self.setFixedWidth(350)
-        self.container.setFixedWidth(350)
+        # Setup compact dimensions and layout - set width to 360px
+        self.setFixedWidth(360)
+        self.container.setFixedWidth(360)
         
         # Save original layout margins
         m = self.container.layout().contentsMargins()
@@ -827,7 +827,7 @@ class MainWindow(QWidget):
     def handle_ai_button_click(self):
         """Callback when the AI Sparks icon is clicked in the toolbar."""
         from utils import config
-        api_key = config.load_gemini_api_key()
+        api_key = config.load_ai_api_key()
         
         if not api_key:
             # Open settings and switch to AI category
