@@ -191,3 +191,11 @@ def load_start_on_startup(default_value=True):
 def save_start_on_startup(value):
     """Save whether Ticky should start automatically on Windows startup."""
     save_config({"start_on_startup": value})
+
+def load_gemini_api_key():
+    """Load saved Gemini API Key."""
+    return load_config().get("gemini_api_key", "")
+
+def save_gemini_api_key(api_key):
+    """Save Gemini API Key."""
+    save_config({"gemini_api_key": api_key})

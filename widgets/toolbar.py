@@ -11,6 +11,8 @@ SPOTIFY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" 
 
 SETTINGS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M22 12.5v-1h-1.03c-.04-.78-.18-1.54-.41-2.26l.95-.37-.36-.93-.95.37c-.38-.85-.89-1.62-1.5-2.3l.73-.73-.71-.71-.73.73c-.57-.51-1.2-.95-1.89-1.3l.42-.93-.91-.41-.42.94a8.9 8.9 0 0 0-2.69-.57V2h-1v1.03c-.78.04-1.54.18-2.26.41l-.37-.95-.93.36.37.95c-.85.38-1.62.89-2.3 1.5l-.73-.73-.71.71.73.73c-.51.57-.95 1.2-1.3 1.89l-.93-.42-.41.91.94.42a8.9 8.9 0 0 0-.57 2.69H2v1h1.03c.04.78.18 1.54.41 2.26l-.95.37.36.93.95-.37c.38.85.89 1.62 1.5 2.3l-.73.73.71.71.73-.73c.57.51-1.2.95 1.89 1.3l-.42.93.91.41.42-.94a8.9 8.9 0 0 0 2.69.57V22h1v-1.03c.78-.04 1.54-.18 2.26-.41l.37.95.93-.36-.37-.95c.85-.38 1.62-.89 2.3-1.5l.73.73.71-.71-.73-.73c.51-.57.95-1.2 1.3-1.89l.93.42.41-.91-.94-.42a8.9 8.9 0 0 0 .57-2.69zM12 5c3.1 0 5.72 2.02 6.65 4.81l-4.05.71c-.52-.91-1.48-1.53-2.6-1.53-.37 0-.72.08-1.05.2L8.31 6.05a6.9 6.9 0 0 1 3.68-1.06Zm1 7c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1m-4.31 6.17a6.99 6.99 0 0 1-1.9-10.83l2.64 3.14c-.26.45-.42.96-.42 1.51 0 .93.43 1.75 1.1 2.3L8.7 18.15ZM12 19c-.49 0-.97-.05-1.43-.15l1.4-3.85H12a2.99 2.99 0 0 0 2.95-2.5l4.04-.71c0 .07.01.14.01.22 0 3.86-3.14 7-7 7Z"></path></svg>"""
 
+AI_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M19 9 17.5 5.5 14 4 17.5 2.5 19 1l1.5 1.5L24 4l-3.5 1.5zm-7-2L10.5 3.5 7 2 10.5.5 12 2l1.5-1.5L17 2l-3.5 1.5zm-5 13L5.5 16.5 2 15l3.5-1.5L7 12l1.5 1.5L12 15l-3.5 1.5zM11.5 6.5l-2.5 5.5-5.5 2.5 5.5 2.5 2.5 5.5 2.5-5.5 5.5-2.5-5.5-2.5zm-1 3.8 1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z"/></svg>"""
+
 PLAY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg>"""
 
 STOP_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10 10-4.49 10-10S17.51 2 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8"></path><path d="M8 8h8v8H8z"></path></svg>"""
@@ -170,6 +172,7 @@ class StopwatchContainer(QWidget):
 class FloatingToolbar(QWidget):
     timer_clicked = Signal()
     music_clicked = Signal()
+    ai_clicked = Signal()
     settings_clicked = Signal()
 
     def __init__(self, parent=None):
@@ -189,8 +192,8 @@ class FloatingToolbar(QWidget):
     def init_ui(self):
         # Base dimensions of capsule toolbar - initially collapsed
         self.setFixedHeight(44)
-        self.setMinimumWidth(140)
-        self.setMaximumWidth(140)
+        self.setMinimumWidth(180)
+        self.setMaximumWidth(180)
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 0)
@@ -207,16 +210,19 @@ class FloatingToolbar(QWidget):
         # Standard buttons
         self.btn_timer = ToolbarButton(TIMER_SVG, "Focus Stopwatch", self)
         self.btn_music = ToolbarButton(SPOTIFY_SVG, "Spotify Integration", self)
+        self.btn_ai = ToolbarButton(AI_SVG, "Gemini AI Chat", self)
         self.btn_settings = ToolbarButton(SETTINGS_SVG, "Settings", self)
         
         self.btn_timer.clicked.connect(self.toggle_stopwatch)
         self.btn_music.clicked.connect(self.music_clicked.emit)
+        self.btn_ai.clicked.connect(self.ai_clicked.emit)
         self.btn_settings.clicked.connect(self.settings_clicked.emit)
         
-        # Assemble from left to right: [Stopwatch Container] [Timer] [Spotify] [Settings]
+        # Assemble from left to right: [Stopwatch Container] [Timer] [Spotify] [AI] [Settings]
         layout.addWidget(self.stopwatch_container)
         layout.addWidget(self.btn_timer)
         layout.addWidget(self.btn_music)
+        layout.addWidget(self.btn_ai)
         layout.addWidget(self.btn_settings)
         
         self.setStyleSheet(qss.get_toolbar_style())
@@ -241,14 +247,14 @@ class FloatingToolbar(QWidget):
         self.toolbar_max_anim.stop()
         
         if not self.is_stopwatch_active:
-            # Expand to 290px
+            # Expand to 330px
             self.stopwatch_anim.setStartValue(self.stopwatch_container.width())
             self.stopwatch_anim.setEndValue(150)
             
             self.toolbar_min_anim.setStartValue(self.width())
-            self.toolbar_min_anim.setEndValue(290)
+            self.toolbar_min_anim.setEndValue(330)
             self.toolbar_max_anim.setStartValue(self.width())
-            self.toolbar_max_anim.setEndValue(290)
+            self.toolbar_max_anim.setEndValue(330)
             
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()
@@ -264,14 +270,14 @@ class FloatingToolbar(QWidget):
             self.is_stopwatch_active = True
             self.btn_timer.setActive(True)
         else:
-            # Collapse back to 140px
+            # Collapse back to 180px
             self.stopwatch_anim.setStartValue(self.stopwatch_container.width())
             self.stopwatch_anim.setEndValue(0)
             
             self.toolbar_min_anim.setStartValue(self.width())
-            self.toolbar_min_anim.setEndValue(140)
+            self.toolbar_min_anim.setEndValue(180)
             self.toolbar_max_anim.setStartValue(self.width())
-            self.toolbar_max_anim.setEndValue(140)
+            self.toolbar_max_anim.setEndValue(180)
             
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()

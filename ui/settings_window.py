@@ -254,7 +254,8 @@ class SettingsWindow(QWidget):
             ("Fonts", 1),
             ("Clock", 2),
             ("Tasks", 3),
-            ("Spotify", 4)
+            ("Spotify", 4),
+            ("AI Chat", 5)
         ]
         
         for name, idx in sidebar_items:
@@ -920,6 +921,94 @@ class SettingsWindow(QWidget):
         
         self.stacked_widget.addWidget(page_spotify)
         
+        # --- Page 6: AI settings ---
+        page_ai = QWidget()
+        page_ai_layout = QVBoxLayout(page_ai)
+        page_ai_layout.setContentsMargins(0, 0, 0, 0)
+        page_ai_layout.setSpacing(10)
+        
+        ai_scroll = QScrollArea(page_ai)
+        ai_scroll.setObjectName("AISettingsScroll")
+        ai_scroll.setWidgetResizable(True)
+        ai_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        ai_content = QWidget()
+        ai_content.setObjectName("AIScrollContent")
+        ai_content_layout = QVBoxLayout(ai_content)
+        ai_content_layout.setContentsMargins(0, 0, 0, 0)
+        ai_content_layout.setSpacing(12)
+        
+        # Guide section
+        ai_guide_section = QFrame(ai_content)
+        ai_guide_section.setObjectName("SettingSection")
+        ai_guide_inner = QVBoxLayout(ai_guide_section)
+        ai_guide_inner.setContentsMargins(12, 10, 12, 10)
+        
+        lbl_ai_guide_title = QLabel("AI Companion Setup", ai_guide_section)
+        lbl_ai_guide_title.setObjectName("SettingLabel")
+        lbl_ai_guide_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_guide_inner.addWidget(lbl_ai_guide_title)
+        
+        self.lbl_ai_guide = QLabel(
+            "<b>Setup Instructions:</b><br>"
+            "1. Visit <a href='https://aistudio.google.com/' style='color:#FF9F0A;'>Google AI Studio</a> and sign in.<br>"
+            "2. Click <b>Get API Key</b> and create a new API Key.<br>"
+            "3. Paste the API Key below to enable the chat panel.<br>"
+            "This integration uses Gemini 1.5 Flash for rapid, intelligent answers.",
+            ai_guide_section
+        )
+        self.lbl_ai_guide.setObjectName("SettingDescription")
+        self.lbl_ai_guide.setOpenExternalLinks(True)
+        self.lbl_ai_guide.setWordWrap(True)
+        self.lbl_ai_guide.setStyleSheet(f"""
+            QLabel#SettingDescription {{
+                line-height: 1.3;
+                color: {theme.TEXT_SECONDARY};
+                font-family: {theme.FONT_FAMILY};
+                font-size: 9px;
+            }}
+        """)
+        ai_guide_inner.addWidget(self.lbl_ai_guide)
+        
+        # Credentials section
+        ai_creds_section = QFrame(ai_content)
+        ai_creds_section.setObjectName("SettingSection")
+        ai_creds_inner = QVBoxLayout(ai_creds_section)
+        ai_creds_inner.setContentsMargins(12, 10, 12, 10)
+        
+        lbl_ai_creds_title = QLabel("Gemini API Key", ai_creds_section)
+        lbl_ai_creds_title.setObjectName("SettingLabel")
+        lbl_ai_creds_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_creds_inner.addWidget(lbl_ai_creds_title)
+        
+        self.input_gemini_key = QLineEdit(ai_creds_section)
+        self.input_gemini_key.setObjectName("SpotifyInput") # Reuse styling
+        self.input_gemini_key.setPlaceholderText("Paste your Gemini API Key here")
+        self.input_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_gemini_key.setText(config.load_gemini_api_key())
+        ai_creds_inner.addWidget(self.input_gemini_key)
+        
+        ai_content_layout.addWidget(ai_guide_section)
+        ai_content_layout.addWidget(ai_creds_section)
+        ai_content_layout.addStretch()
+        
+        ai_scroll.setWidget(ai_content)
+        page_ai_layout.addWidget(ai_scroll)
+        
+        ai_btn_layout = QHBoxLayout()
+        ai_btn_layout.setSpacing(10)
+        ai_btn_layout.setContentsMargins(0, 4, 0, 0)
+        
+        self.btn_save_ai = QPushButton("Save API Key", page_ai)
+        self.btn_save_ai.setStyleSheet(self.get_action_button_style())
+        self.btn_save_ai.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save_ai.clicked.connect(self.save_ai_key)
+        
+        ai_btn_layout.addWidget(self.btn_save_ai)
+        page_ai_layout.addLayout(ai_btn_layout)
+        
+        self.stacked_widget.addWidget(page_ai)
+        
         content_layout.addWidget(self.stacked_widget)
         
         # Separator line before exit button
@@ -961,7 +1050,7 @@ class SettingsWindow(QWidget):
         self.stacked_widget.setCurrentIndex(index)
         
         # Update page header title
-        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Task Preferences", "Spotify Integration"]
+        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Task Preferences", "Spotify Integration", "AI Integration"]
         self.lbl_page_title.setText(titles[index])
         
         # Update sidebar buttons style
@@ -1050,7 +1139,7 @@ class SettingsWindow(QWidget):
         style = self.get_action_button_style()
         for btn in (
             self.btn_save_general, self.btn_save_fonts, self.btn_save_clock,
-            self.btn_save_spotify, self.btn_connect_spotify,
+            self.btn_save_spotify, self.btn_connect_spotify, self.btn_save_ai
         ):
             btn.setStyleSheet(style)
 
@@ -1215,6 +1304,13 @@ class SettingsWindow(QWidget):
         self.update_spotify_status_ui()
         from PySide6.QtCore import QTimer
         QTimer.singleShot(1500, lambda: self.btn_save_spotify.setText("Save Credentials"))
+
+    def save_ai_key(self):
+        key = self.input_gemini_key.text().strip()
+        config.save_gemini_api_key(key)
+        self.btn_save_ai.setText("Saved!")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: self.btn_save_ai.setText("Save API Key"))
 
     def on_demo_mode_toggled(self, checked):
         config.save_spotify_demo_mode(checked)

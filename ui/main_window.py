@@ -179,14 +179,14 @@ class MainWindow(QWidget):
         QApplication.instance().installEventFilter(self)
 
     def init_ui(self):
-        # Allow height to wrap contents dynamically, fixed width 320, minimum height 150
-        self.setFixedWidth(320)
+        # Allow height to wrap contents dynamically, fixed width 350, minimum height 150
+        self.setFixedWidth(350)
         self.setMinimumHeight(150)
         
         # Central container widget to apply style and rounded corners
         self.container = QWidget(self)
         self.container.setObjectName("MainWindowContainer")
-        self.container.setFixedWidth(320)
+        self.container.setFixedWidth(350)
         self.container.setMinimumHeight(150)
         
         # Enable dynamic size resizing on container and main window
@@ -268,6 +268,7 @@ class MainWindow(QWidget):
         self.toolbar = FloatingToolbar(self)
         self.toolbar.settings_clicked.connect(self.show_settings_menu)
         self.toolbar.music_clicked.connect(self.handle_spotify_button_click)
+        self.toolbar.ai_clicked.connect(self.handle_ai_button_click)
         toolbar_container.addWidget(self.toolbar)
         layout.addLayout(toolbar_container)
 
@@ -275,6 +276,11 @@ class MainWindow(QWidget):
         from widgets.spotify_panel import SpotifyPanel
         self.spotify_panel = SpotifyPanel(self)
         layout.addWidget(self.spotify_panel)
+        
+        # AI collapsible panel (placed below the toolbar)
+        from widgets.ai_panel import AIPanel
+        self.ai_panel = AIPanel(self)
+        layout.addWidget(self.ai_panel)
         
         # Outer layout of Main Window to place container centered
         outer_layout = QVBoxLayout(self)
@@ -461,8 +467,8 @@ class MainWindow(QWidget):
         if hasattr(self, '_orig_margins'):
             self.container.layout().setContentsMargins(*self._orig_margins)
             self.container.layout().setSpacing(self._orig_spacing)
-        self.setFixedWidth(320)
-        self.container.setFixedWidth(320)
+        self.setFixedWidth(350)
+        self.container.setFixedWidth(350)
         
         self.container.show()
         self.clock_widget.show()
@@ -481,7 +487,13 @@ class MainWindow(QWidget):
             self.spotify_panel.timeline_timer.stop()
             self.spotify_panel.poll_timer.stop()
             
+        if hasattr(self, 'ai_panel'):
+            self.ai_panel.hide()
+            self.ai_panel.is_expanded = False
+            self.ai_panel.setFixedHeight(0)
+            
         self.toolbar.btn_music.setActive(False)
+        self.toolbar.btn_ai.setActive(False)
         self.spotify_menu_btn.hide()
         
         self.show()
@@ -506,9 +518,9 @@ class MainWindow(QWidget):
             if item and item.widget():
                 item.widget().hide()
                 
-        # Setup compact dimensions and layout - set width to 340px
-        self.setFixedWidth(340)
-        self.container.setFixedWidth(340)
+        # Setup compact dimensions and layout - set width to 350px
+        self.setFixedWidth(350)
+        self.container.setFixedWidth(350)
         
         # Save original layout margins
         m = self.container.layout().contentsMargins()
@@ -518,6 +530,11 @@ class MainWindow(QWidget):
         # Remove layouts margins and spacing
         self.container.layout().setContentsMargins(0, 0, 0, 0)
         self.container.layout().setSpacing(0)
+        
+        if hasattr(self, 'ai_panel'):
+            self.ai_panel.hide()
+            self.ai_panel.is_expanded = False
+            self.ai_panel.setFixedHeight(0)
         
         self.spotify_panel.set_mini_mode(True)
         self.spotify_panel.show()
@@ -801,5 +818,27 @@ class MainWindow(QWidget):
             self.settings_window.show_centered()
             self.settings_window.switch_page(4)
         else:
+            # Collapse AI if it is expanded
+            if hasattr(self, 'ai_panel') and self.ai_panel.is_expanded:
+                self.ai_panel.collapse()
             # Expand/collapse Spotify panel height
             self.spotify_panel.toggle()
+            
+    def handle_ai_button_click(self):
+        """Callback when the AI Sparks icon is clicked in the toolbar."""
+        from utils import config
+        api_key = config.load_gemini_api_key()
+        
+        if not api_key:
+            # Open settings and switch to AI category
+            if not hasattr(self, 'settings_window') or self.settings_window is None:
+                from ui.settings_window import SettingsWindow
+                self.settings_window = SettingsWindow(self)
+            self.settings_window.show_centered()
+            self.settings_window.switch_page(5)
+        else:
+            # Collapse Spotify if it is expanded
+            if hasattr(self, 'spotify_panel') and self.spotify_panel.is_expanded:
+                self.spotify_panel.toggle()
+            # Expand/collapse AI panel height
+            self.ai_panel.toggle()
