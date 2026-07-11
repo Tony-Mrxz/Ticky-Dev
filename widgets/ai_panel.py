@@ -100,7 +100,7 @@ class AIWorker(QThread):
                     self.finished.emit(False, err_msg)
                     
             elif provider == "groq":
-                url = "https://api.groq.com/openapi/v1/chat/completions"
+                url = "https://api.groq.com/openai/v1/chat/completions"
                 headers = {
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"

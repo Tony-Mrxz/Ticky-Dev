@@ -592,6 +592,10 @@ class MainWindow(QWidget):
             return False
         if hasattr(self, 'pagination_widget') and self.pagination_widget and (obj == self.pagination_widget or self.pagination_widget.isAncestorOf(obj)):
             return False
+        if hasattr(self, 'ai_panel') and self.ai_panel and (obj == self.ai_panel or self.ai_panel.isAncestorOf(obj)):
+            return False
+        if hasattr(self, 'spotify_panel') and self.spotify_panel and (obj == self.spotify_panel or self.spotify_panel.isAncestorOf(obj)):
+            return False
         if hasattr(self, 'tasks_layout') and self.tasks_layout:
             for i in range(self.tasks_layout.count()):
                 item = self.tasks_layout.itemAt(i)
