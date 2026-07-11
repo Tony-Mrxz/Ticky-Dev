@@ -149,12 +149,19 @@ class ChatBubble(QFrame):
         self.setObjectName("ChatBubble")
         self.is_user = is_user
         
+        # Prevent the bubble row itself from ever expanding horizontally
+        from PySide6.QtWidgets import QSizePolicy as _SP
+        self.setSizePolicy(_SP.Policy.Expanding, _SP.Policy.Minimum)
+        
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
         self.lbl_text = QLabel(text, self)
         self.lbl_text.setWordWrap(True)
         self.lbl_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        # Shrink to content but never grow beyond available width
+        self.lbl_text.setSizePolicy(_SP.Policy.Expanding, _SP.Policy.Minimum)
         
         if is_user:
             layout.addStretch(1)
@@ -243,8 +250,11 @@ class AIPanel(QWidget):
         
         self.chat_content = QWidget()
         self.chat_content.setStyleSheet("background: transparent;")
+        # Prevent the inner widget from stretching wider than the scroll viewport
+        from PySide6.QtWidgets import QSizePolicy as _SP
+        self.chat_content.setSizePolicy(_SP.Policy.Expanding, _SP.Policy.Preferred)
         self.chat_layout = QVBoxLayout(self.chat_content)
-        self.chat_layout.setContentsMargins(0, 0, 0, 0)
+        self.chat_layout.setContentsMargins(0, 0, 4, 0)
         self.chat_layout.setSpacing(8)
         self.chat_layout.addStretch(1) # Keeps messages pushed to bottom
         
@@ -381,6 +391,23 @@ class AIPanel(QWidget):
         
         if not api_key:
             self.add_bubble(f"⚠️ API Key not set! Please save your key in Ticky Settings -> AI Chat tab.", is_user=False)
+            return
+            
+        # Detect incorrect provider selection based on API key prefix to prevent authorization errors
+        if api_key.startswith("gsk_") and provider.lower() != "groq":
+            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'gsk_', which is a Groq key, but the selected provider is '{provider}'. Please change the AI Provider to 'Groq' in Settings -> AI Chat.", is_user=False)
+            return
+        elif api_key.startswith("sk-or-v1-") and provider.lower() != "openrouter":
+            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-or-v1-', which is an OpenRouter key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenRouter' in Settings -> AI Chat.", is_user=False)
+            return
+        elif api_key.startswith("sk-ant-") and provider.lower() != "claude":
+            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-ant-', which is a Claude key, but the selected provider is '{provider}'. Please change the AI Provider to 'Claude' in Settings -> AI Chat.", is_user=False)
+            return
+        elif (api_key.startswith("sk-proj-") or (api_key.startswith("sk-") and not api_key.startswith("sk-or-v1-") and not api_key.startswith("sk-ant-"))) and provider.lower() != "openai":
+            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-', which is an OpenAI key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenAI' in Settings -> AI Chat.", is_user=False)
+            return
+        elif api_key.startswith("AIzaSy") and provider.lower() != "gemini":
+            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'AIzaSy', which is a Gemini key, but the selected provider is '{provider}'. Please change the AI Provider to 'Gemini' in Settings -> AI Chat.", is_user=False)
             return
             
         # Add thinking indicator

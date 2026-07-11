@@ -1355,6 +1355,32 @@ class SettingsWindow(QWidget):
         key = self.input_ai_key.text().strip()
         model = self.input_ai_model.text().strip()
         
+        # Mismatch validation warnings
+        warning_msg = None
+        if key:
+            if key.startswith("gsk_") and provider != "Groq":
+                warning_msg = f"API key starts with 'gsk_' (Groq), but provider is '{provider}'."
+            elif key.startswith("sk-or-v1-") and provider != "OpenRouter":
+                warning_msg = f"API key starts with 'sk-or-v1-' (OpenRouter), but provider is '{provider}'."
+            elif key.startswith("sk-ant-") and provider != "Claude":
+                warning_msg = f"API key starts with 'sk-ant-' (Claude), but provider is '{provider}'."
+            elif (key.startswith("sk-proj-") or (key.startswith("sk-") and not key.startswith("sk-or-v1-") and not key.startswith("sk-ant-"))) and provider != "OpenAI":
+                warning_msg = f"API key starts with 'sk-' (OpenAI), but provider is '{provider}'."
+            elif key.startswith("AIzaSy") and provider != "Gemini":
+                warning_msg = f"API key starts with 'AIzaSy' (Gemini), but provider is '{provider}'."
+
+        if warning_msg:
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.warning(
+                self, 
+                "Provider Mismatch Warning", 
+                f"{warning_msg}\n\nAre you sure you want to save this configuration?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+        
         config.save_ai_provider(provider)
         config.save_ai_api_key(key)
         config.save_ai_model(model)
