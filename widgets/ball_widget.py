@@ -20,6 +20,10 @@ class BallWidget(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
+        import sys
+        if sys.platform == 'darwin':
+            self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow, True)
+        
         # Dimensions: 40px height, starts with 40px width (perfect circle)
         self.setFixedHeight(40)
         self.setMinimumWidth(40)

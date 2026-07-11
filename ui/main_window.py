@@ -142,6 +142,9 @@ class MainWindow(QWidget):
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
+        if sys.platform == 'darwin':
+            self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow, True)
+        
         self.tasks = config.load_tasks()
         self.current_page = 0
         self.input_card = None
@@ -685,9 +688,15 @@ class MainWindow(QWidget):
         else:
             flags &= ~Qt.WindowType.WindowStaysOnBottomHint
             
+        is_visible = self.isVisible()
+        if sys.platform == 'darwin':
+            self.hide()
+            
         self.setWindowFlags(flags)
         self.move(curr_pos)
-        self.show()
+        
+        if is_visible:
+            self.show()
 
     def set_always_on_top(self, enabled):
         # Save current position to prevent position resetting on Windows
@@ -699,9 +708,15 @@ class MainWindow(QWidget):
         else:
             flags &= ~Qt.WindowType.WindowStaysOnTopHint
             
+        is_visible = self.isVisible()
+        if sys.platform == 'darwin':
+            self.hide()
+            
         self.setWindowFlags(flags)
         self.move(curr_pos)
-        self.show()
+        
+        if is_visible:
+            self.show()
 
     def refresh_theme(self):
         # Refresh global application stylesheet for tooltips and menus
