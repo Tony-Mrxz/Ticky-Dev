@@ -147,6 +147,7 @@ class ChatBubble(QFrame):
     def __init__(self, text, is_user=True, parent=None):
         super().__init__(parent)
         self.setObjectName("ChatBubble")
+        self.is_user = is_user
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -155,28 +156,30 @@ class ChatBubble(QFrame):
         self.lbl_text.setWordWrap(True)
         self.lbl_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         
-        bg = "rgba(255, 159, 10, 35)" if is_user else "rgba(255, 255, 255, 12)"
-        border = f"1px solid {theme.ACCENT_COLOR}" if is_user else f"1px solid {theme.BORDER_COLOR}"
-        text_color = theme.TEXT_PRIMARY
-        
-        self.lbl_text.setStyleSheet(f"""
-            QLabel {{
-                color: {text_color};
-                font-family: {theme.FONT_FAMILY};
-                font-size: 11px;
-                background-color: {bg};
-                border: {border};
-                border-radius: 10px;
-                padding: 6px 10px;
-            }}
-        """)
-        
         if is_user:
             layout.addStretch(1)
             layout.addWidget(self.lbl_text, 4)
         else:
             layout.addWidget(self.lbl_text, 4)
             layout.addStretch(1)
+        
+        self.refresh_style()
+
+    def refresh_style(self):
+        from styles import theme as _theme
+        bg = "rgba(255, 159, 10, 35)" if self.is_user else "rgba(255, 255, 255, 12)"
+        border = f"1px solid {_theme.ACCENT_COLOR}" if self.is_user else f"1px solid {_theme.BORDER_COLOR}"
+        self.lbl_text.setStyleSheet(f"""
+            QLabel {{
+                color: {_theme.TEXT_PRIMARY};
+                font-family: {_theme.FONT_FAMILY};
+                font-size: {_theme.TASK_SIZE}px;
+                background-color: {bg};
+                border: {border};
+                border-radius: 10px;
+                padding: 6px 10px;
+            }}
+        """)
 
 
 class AIPanel(QWidget):
@@ -251,7 +254,7 @@ class AIPanel(QWidget):
         # Welcome/Disclaimer label
         self.lbl_welcome = QLabel(self.card)
         self.lbl_welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_welcome.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-family: {theme.FONT_FAMILY}; font-size: 10px;")
+        self.lbl_welcome.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-family: {theme.FONT_FAMILY}; font-size: {theme.TASK_SIZE - 2}px;")
         self.chat_layout.addWidget(self.lbl_welcome)
         
         # Input row
@@ -259,22 +262,7 @@ class AIPanel(QWidget):
         input_layout.setSpacing(6)
         
         self.input_field = QLineEdit(self.card)
-        self.input_field.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: rgba(0, 0, 0, 80);
-                border: 1px solid rgba(255, 255, 255, 15);
-                border-radius: 14px;
-                color: {theme.TEXT_PRIMARY};
-                font-family: {theme.FONT_FAMILY};
-                font-size: 11px;
-                padding: 6px 12px;
-                min-height: 16px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {theme.ACCENT_COLOR};
-                background-color: rgba(0, 0, 0, 100);
-            }}
-        """)
+        self._apply_input_style()
         self.input_field.returnPressed.connect(self.send_message)
         
         # Send button
@@ -296,6 +284,48 @@ class AIPanel(QWidget):
         self.card.setGraphicsEffect(shadow)
         
         self.update_welcome_text()
+
+    def _apply_input_style(self):
+        from styles import theme as _theme
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: rgba(0, 0, 0, 80);
+                border: 1px solid rgba(255, 255, 255, 15);
+                border-radius: 14px;
+                color: {_theme.TEXT_PRIMARY};
+                font-family: {_theme.FONT_FAMILY};
+                font-size: {_theme.TASK_SIZE}px;
+                padding: 6px 12px;
+                min-height: 16px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {_theme.ACCENT_COLOR};
+                background-color: rgba(0, 0, 0, 100);
+            }}
+        """)
+
+    def refresh_styles(self):
+        """Re-apply font family and size to all chat elements (called by refresh_theme)."""
+        from styles import theme as _theme
+        # Welcome label
+        self.lbl_welcome.setStyleSheet(
+            f"color: {_theme.TEXT_SECONDARY}; font-family: {_theme.FONT_FAMILY}; font-size: {_theme.TASK_SIZE - 2}px;"
+        )
+        # Card background
+        self.card.setStyleSheet(f"""
+            QFrame#AICard {{
+                background-color: {_theme.MAIN_CARD_COLOR};
+                border: 1px solid {_theme.BORDER_COLOR};
+                border-radius: 12px;
+            }}
+        """)
+        # Input field
+        self._apply_input_style()
+        # All existing chat bubbles
+        for i in range(self.chat_layout.count()):
+            item = self.chat_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), ChatBubble):
+                item.widget().refresh_style()
 
     def update_welcome_text(self):
         provider = config.load_ai_provider()

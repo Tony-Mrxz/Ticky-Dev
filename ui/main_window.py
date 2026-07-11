@@ -789,6 +789,9 @@ class MainWindow(QWidget):
         if hasattr(self, 'spotify_panel') and self.spotify_panel:
             self.spotify_panel.refresh_styles()
         
+        if hasattr(self, 'ai_panel') and self.ai_panel:
+            self.ai_panel.refresh_styles()
+        
         # Re-apply styles of currently visible task cards
         for i in range(self.tasks_layout.count()):
             item = self.tasks_layout.itemAt(i)
