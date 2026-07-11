@@ -128,6 +128,81 @@ class ColorSwatch(QPushButton):
             painter.drawEllipse(rect.adjusted(2, 2, -2, -2))
 
 
+class ThemeCard(QPushButton):
+    """Clickable theme preview card showing bg tint, panel color, and name."""
+    theme_selected = Signal(str)
+
+    def __init__(self, theme_name, theme_data, is_active=False, parent=None):
+        super().__init__("", parent)
+        self.theme_name = theme_name
+        self.theme_data = theme_data
+        self.is_active = is_active
+        self.setFixedSize(82, 72)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(lambda: self.theme_selected.emit(self.theme_name))
+
+    def setActive(self, active):
+        self.is_active = active
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        bg = QColor(self.theme_data["bg"])
+        panel = QColor(self.theme_data["main_card"])
+        accent_str = theme.ACCENT_COLOR.lstrip('#')
+        accent = QColor(
+            int(accent_str[0:2], 16),
+            int(accent_str[2:4], 16),
+            int(accent_str[4:6], 16)
+        )
+
+        # Outer border
+        if self.is_active:
+            painter.setPen(QPen(accent, 1.5))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
+        painter.setBrush(bg)
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 8, 8)
+
+        # Simulated toolbar strip
+        toolbar_rect = self.rect().adjusted(2, 2, -2, -46)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(panel)
+        painter.drawRoundedRect(toolbar_rect, 6, 6)
+
+        # 3 tiny dots as toolbar icons
+        for i in range(3):
+            painter.setBrush(QColor(255, 255, 255, 45))
+            painter.drawEllipse(8 + i * 11, 9, 6, 6)
+
+        # Simulated content panel
+        content_rect = self.rect().adjusted(2, 26, -2, -18)
+        painter.setBrush(panel)
+        painter.drawRoundedRect(content_rect, 5, 5)
+
+        # Tiny clock line
+        painter.setBrush(accent)
+        painter.drawRoundedRect(8, 30, 24, 3, 1, 1)
+        painter.setBrush(QColor(255, 255, 255, 40))
+        painter.drawRoundedRect(8, 36, 16, 2, 1, 1)
+
+        # Two task rows
+        for i in range(2):
+            y = 44 + i * 7
+            painter.setBrush(accent)
+            painter.drawEllipse(8, y, 3, 3)
+            painter.setBrush(QColor(255, 255, 255, 35))
+            painter.drawRoundedRect(14, y, 28, 2, 1, 1)
+
+        # Theme name label at bottom
+        painter.setPen(QColor(255, 255, 255, 200) if self.is_active else QColor(255, 255, 255, 110))
+        font = QFont(theme.FONT_FAMILY, 6, QFont.Weight.Bold if self.is_active else QFont.Weight.Normal)
+        painter.setFont(font)
+        painter.drawText(self.rect().adjusted(0, 0, 0, -2), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, self.theme_name)
+
+
 class ClockStyleCard(QFrame):
     clicked = Signal(str)
 
@@ -222,12 +297,12 @@ class SettingsWindow(QWidget):
 
     def init_ui(self):
         # Increased window size to landscape orientation for sidebar dashboard layout
-        self.setFixedSize(520, 450)
+        self.setFixedSize(680, 560)
         
         # Main Outer Container Frame
         self.container = QFrame(self)
         self.container.setObjectName("SettingsWindowContainer")
-        self.container.setFixedSize(520, 450)
+        self.container.setFixedSize(680, 560)
         
         main_layout = QHBoxLayout(self.container)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -236,7 +311,7 @@ class SettingsWindow(QWidget):
         # 1. Left Sidebar layout panel
         self.sidebar = QFrame(self.container)
         self.sidebar.setObjectName("SettingsSidebar")
-        self.sidebar.setFixedWidth(135)
+        self.sidebar.setFixedWidth(155)
         
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(10, 16, 10, 16)
@@ -253,7 +328,7 @@ class SettingsWindow(QWidget):
             ("General", 0),
             ("Fonts", 1),
             ("Clock", 2),
-            ("Tasks", 3),
+            ("Appearance", 3),
             ("Spotify", 4),
             ("AI Chat", 5)
         ]
@@ -715,17 +790,31 @@ class SettingsWindow(QWidget):
         
         lbl_col = QLabel("Accent Color", accent_section)
         lbl_col.setObjectName("SettingLabel")
-        lbl_col_desc = QLabel("Select the main accent theme color", accent_section)
+        lbl_col_desc = QLabel("Select the highlight & active state color", accent_section)
         lbl_col_desc.setObjectName("SettingDescription")
         accent_inner.addWidget(lbl_col)
         accent_inner.addWidget(lbl_col_desc)
         
         swatches_layout = QHBoxLayout()
-        swatches_layout.setSpacing(10)
+        swatches_layout.setSpacing(8)
+        swatches_layout.setContentsMargins(0, 0, 0, 0)
         swatches_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         
         self.swatches = []
-        colors = ["#4CC2FF", "#FF453A", "#FF9F0A", "#30D158", "#BF5AF2", "#FFD60A"]
+        colors = [
+            "#4CC2FF",  # Ice Blue
+            "#38BDF8",  # Sky
+            "#0A84FF",  # Deep Blue
+            "#5E5CE6",  # Indigo
+            "#BF5AF2",  # Violet
+            "#FF375F",  # Hot Pink
+            "#FF6B6B",  # Coral
+            "#FF453A",  # Red
+            "#FF9F0A",  # Orange
+            "#FFD60A",  # Yellow
+            "#30D158",  # Green
+            "#00C9A7",  # Teal
+        ]
         current_accent = config.load_accent_color()
         for hex_color in colors:
             is_active = (hex_color.lower() == current_accent.lower())
@@ -776,13 +865,54 @@ class SettingsWindow(QWidget):
         lbl_theme_title.setObjectName("SettingSectionTitle")
         tasks_content_layout.addWidget(lbl_theme_title)
         tasks_content_layout.addWidget(accent_section)
-        
+
+        # --- UI Color Theme selector ---
+        lbl_ui_theme_title = QLabel("UI Color Theme", tasks_content)
+        lbl_ui_theme_title.setObjectName("SettingSectionTitle")
+        tasks_content_layout.addWidget(lbl_ui_theme_title)
+
+        theme_section = QFrame(tasks_content)
+        theme_section.setObjectName("SettingSection")
+        theme_inner = QVBoxLayout(theme_section)
+        theme_inner.setContentsMargins(12, 10, 12, 10)
+        theme_inner.setSpacing(8)
+
+        lbl_theme_desc = QLabel("Changes the background and panel colors across the entire widget", theme_section)
+        lbl_theme_desc.setObjectName("SettingDescription")
+        theme_inner.addWidget(lbl_theme_desc)
+
+        self.theme_cards = {}
+        current_theme_name = config.load_theme("Obsidian")
+
+        # Row 1 — first 3 themes
+        theme_row1 = QHBoxLayout()
+        theme_row1.setSpacing(8)
+        theme_row1.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Row 2 — remaining themes
+        theme_row2 = QHBoxLayout()
+        theme_row2.setSpacing(8)
+        theme_row2.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        for i, (t_name, t_data) in enumerate(theme.THEMES.items()):
+            is_active = (t_name == current_theme_name)
+            card = ThemeCard(t_name, t_data, is_active, theme_section)
+            card.theme_selected.connect(self.on_theme_changed)
+            self.theme_cards[t_name] = card
+            if i < 3:
+                theme_row1.addWidget(card)
+            else:
+                theme_row2.addWidget(card)
+
+        theme_inner.addLayout(theme_row1)
+        theme_inner.addLayout(theme_row2)
+        tasks_content_layout.addWidget(theme_section)
+
         lbl_text_title = QLabel("Text Configuration", tasks_content)
         lbl_text_title.setObjectName("SettingSectionTitle")
         tasks_content_layout.addWidget(lbl_text_title)
         tasks_content_layout.addWidget(size_section)
         
-        lbl_dynamic_save_notice = QLabel("💡 Colors and font sizes are saved dynamically.", tasks_content)
+        lbl_dynamic_save_notice = QLabel("💡 Colors, themes and font sizes are saved dynamically.", tasks_content)
         lbl_dynamic_save_notice.setObjectName("SettingDescription")
         lbl_dynamic_save_notice.setStyleSheet("color: #FF9F0A; padding-top: 8px;")
         tasks_content_layout.addWidget(lbl_dynamic_save_notice)
@@ -1095,7 +1225,7 @@ class SettingsWindow(QWidget):
         self.stacked_widget.setCurrentIndex(index)
         
         # Update page header title
-        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Task Preferences", "Spotify Integration", "AI Integration"]
+        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Appearance", "Spotify Integration", "AI Integration"]
         self.lbl_page_title.setText(titles[index])
         
         # Update sidebar buttons style
@@ -1543,6 +1673,21 @@ class SettingsWindow(QWidget):
         self.fade_anim.setEndValue(1.0)
         self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
         self.fade_anim.start()
+
+    def on_theme_changed(self, theme_name):
+        """Apply selected UI color theme globally and refresh all panels."""
+        theme.apply_theme(theme_name)
+
+        # Update active state on all theme cards
+        for name, card in self.theme_cards.items():
+            card.setActive(name == theme_name)
+
+        # Refresh settings window styling itself
+        self.update_settings_style()
+
+        # Refresh the main widget and all its panels
+        if self.parent_window:
+            self.parent_window.refresh_theme()
 
     def closeEvent(self, event):
         if self.parent_window and hasattr(self.parent_window, 'toolbar'):

@@ -233,7 +233,7 @@ def get_settings_style():
         QLabel#SidebarTitle {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 1.5px;
@@ -248,7 +248,7 @@ def get_settings_style():
             border: none;
             border-radius: 6px;
             font-family: {theme.FONT_FAMILY};
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
             padding: 8px 12px;
             text-align: left;
@@ -270,7 +270,7 @@ def get_settings_style():
         QLabel#SettingsTitle {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 14px;
+            font-size: 16px;
             font-weight: bold;
             background-color: transparent;
         }}
@@ -291,7 +291,7 @@ def get_settings_style():
         QLabel#SettingLabel {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.FONT_FAMILY};
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
             background-color: transparent;
         }}
@@ -301,7 +301,7 @@ def get_settings_style():
         QLabel#SettingDescription {{
             color: {theme.TEXT_SECONDARY};
             font-family: {theme.FONT_FAMILY};
-            font-size: 9px;
+            font-size: 11px;
             background-color: transparent;
         }}
         QLabel#SettingDescription:disabled {{
@@ -310,7 +310,7 @@ def get_settings_style():
         QLabel#SettingSectionTitle {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 700;
             letter-spacing: 0.5px;
             background-color: transparent;
@@ -348,7 +348,7 @@ def get_settings_style():
             border: 1px solid {theme.BORDER_COLOR};
             border-radius: 6px;
             font-family: {theme.FONT_FAMILY};
-            font-size: 11px;
+            font-size: 13px;
             padding: 6px 10px;
         }}
         QLineEdit#SpotifyInput:focus {{

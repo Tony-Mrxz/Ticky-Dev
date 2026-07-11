@@ -317,10 +317,14 @@ class AIPanel(QWidget):
     def refresh_styles(self):
         """Re-apply font family and size to all chat elements (called by refresh_theme)."""
         from styles import theme as _theme
-        # Welcome label
-        self.lbl_welcome.setStyleSheet(
-            f"color: {_theme.TEXT_SECONDARY}; font-family: {_theme.FONT_FAMILY}; font-size: {_theme.TASK_SIZE - 2}px;"
-        )
+        # Welcome label — guard against deleted C++ object (can happen if clear_chat ran deleteLater)
+        try:
+            if self.lbl_welcome and not self.lbl_welcome.isHidden() or True:
+                self.lbl_welcome.setStyleSheet(
+                    f"color: {_theme.TEXT_SECONDARY}; font-family: {_theme.FONT_FAMILY}; font-size: {_theme.TASK_SIZE - 2}px;"
+                )
+        except RuntimeError:
+            pass  # C++ object already deleted — safe to ignore
         # Card background
         self.card.setStyleSheet(f"""
             QFrame#AICard {{
@@ -447,14 +451,18 @@ class AIPanel(QWidget):
         self.scroll_to_bottom()
 
     def clear_chat(self):
+        # Remove lbl_welcome from layout first so it doesn't get deleteLater'd below
+        self.chat_layout.removeWidget(self.lbl_welcome)
+        # Delete all temporary chat bubble widgets
         for i in reversed(range(self.chat_layout.count())):
             item = self.chat_layout.itemAt(i)
             if item and item.widget():
                 widget = item.widget()
                 self.chat_layout.removeWidget(widget)
                 widget.deleteLater()
-        self.lbl_welcome.show()
+        # Re-add and show the persistent welcome label
         self.chat_layout.addWidget(self.lbl_welcome)
+        self.lbl_welcome.show()
 
     def scroll_to_bottom(self):
         QTimer.singleShot(50, lambda: self.scroll.verticalScrollBar().setValue(

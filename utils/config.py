@@ -112,6 +112,14 @@ def save_spotify_demo_mode(value):
     """Save whether Spotify demo mode is enabled."""
     save_config({"spotify_demo_mode": value})
 
+def load_theme(default_value="Obsidian"):
+    """Load the selected UI color theme name."""
+    return load_config().get("ui_theme", default_value)
+
+def save_theme(value):
+    """Save the selected UI color theme name."""
+    save_config({"ui_theme": value})
+
 def load_tasks():
     """Load the list of active tasks."""
     return load_config().get("tasks", [])
