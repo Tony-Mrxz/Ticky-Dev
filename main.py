@@ -18,7 +18,17 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from ui.main_window import MainWindow
 from utils.icon import create_ticky_icon
 
+lock_file = None
+
 def main():
+    global lock_file
+    # Enforce single instance application lock
+    from PySide6.QtCore import QLockFile, QDir
+    lock_file = QLockFile(QDir.temp().absoluteFilePath("ticky_application.lock"))
+    if not lock_file.tryLock(100):
+        print("Ticky is already running. Exiting.", flush=True)
+        sys.exit(0)
+        
     # Set high-DPI scaling attributes if using older Qt versions, but PySide6 handles it natively
     QApplication.setStyle("fusion")
     
