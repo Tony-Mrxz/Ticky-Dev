@@ -19,36 +19,25 @@ pyz = PYZ(a.pure)
 
 is_mac = sys.platform == 'darwin'
 
-exe_icon = 'ticky.icns' if is_mac else 'ticky.ico'
-if is_mac and not os.path.exists(exe_icon):
-    exe_icon = None
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    # If on Mac, we build as a directory/bundle structure, so we don't pack binaries in EXE
-    a.binaries if not is_mac else [],
-    a.zipfiles if not is_mac else [],
-    a.datas if not is_mac else [],
-    [],
-    name='Ticky',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    version=None if is_mac else 'version_info.txt',
-    icon=exe_icon,
-)
-
 if is_mac:
+    # On macOS, build in "onedir" mode (exclude binaries from EXE) and collect them in a BUNDLE
+    exe = EXE(
+        pyz,
+        a.scripts,
+        exclude_binaries=True,
+        name='Ticky',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=None,
+    )
     coll = COLLECT(
         exe,
         a.binaries,
@@ -62,6 +51,30 @@ if is_mac:
     app = BUNDLE(
         coll,
         name='Ticky.app',
-        icon='ticky.icns' if os.path.exists('ticky.icns') else None,
+        icon=None,
         bundle_identifier='com.ticky.dev',
+    )
+else:
+    # On Windows, build in "onefile" mode (pack everything into the EXE)
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='Ticky',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        version='version_info.txt',
+        icon=['ticky.ico'],
     )
