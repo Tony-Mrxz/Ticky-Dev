@@ -139,7 +139,7 @@ class StopwatchContainer(QWidget):
         self.btn_restart = ToolbarButton(RESTART_SVG, "Reset Timer", self)
         self.btn_restart.setObjectName("StopwatchButton")
         
-        self.lbl_time = QLabel("00:00.0", self)
+        self.lbl_time = QLabel("00:00:00", self)
         self.lbl_time.setObjectName("StopwatchLabel")
         self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -181,7 +181,7 @@ class FloatingToolbar(QWidget):
         
         # Setup stopwatch QTimer
         self.stopwatch_timer = QTimer(self)
-        self.stopwatch_timer.setInterval(100)
+        self.stopwatch_timer.setInterval(1000)
         self.stopwatch_timer.timeout.connect(self.update_stopwatch_time)
         
         self.init_ui()
@@ -241,14 +241,14 @@ class FloatingToolbar(QWidget):
         self.toolbar_max_anim.stop()
         
         if not self.is_stopwatch_active:
-            # Expand to 280px
+            # Expand to 290px
             self.stopwatch_anim.setStartValue(self.stopwatch_container.width())
-            self.stopwatch_anim.setEndValue(140)
+            self.stopwatch_anim.setEndValue(150)
             
             self.toolbar_min_anim.setStartValue(self.width())
-            self.toolbar_min_anim.setEndValue(280)
+            self.toolbar_min_anim.setEndValue(290)
             self.toolbar_max_anim.setStartValue(self.width())
-            self.toolbar_max_anim.setEndValue(280)
+            self.toolbar_max_anim.setEndValue(290)
             
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()
@@ -257,10 +257,10 @@ class FloatingToolbar(QWidget):
             # Reset timer running state when opening (do not start automatically)
             self.is_timer_running = False
             self.stopwatch_container.btn_play_stop.set_svg_template(PLAY_SVG, "Start Timer")
-            mins = (self.stopwatch_ms // 60000) % 100
+            hours = self.stopwatch_ms // 3600000
+            mins = (self.stopwatch_ms // 60000) % 60
             secs = (self.stopwatch_ms // 1000) % 60
-            tenths = (self.stopwatch_ms // 100) % 10
-            self.stopwatch_container.lbl_time.setText(f"{mins:02d}:{secs:02d}.{tenths:d}")
+            self.stopwatch_container.lbl_time.setText(f"{hours:02d}:{mins:02d}:{secs:02d}")
             self.is_stopwatch_active = True
             self.btn_timer.setActive(True)
         else:
@@ -310,11 +310,11 @@ class FloatingToolbar(QWidget):
             self.btn_timer.setActive(False)
 
     def update_stopwatch_time(self):
-        self.stopwatch_ms += 100
-        mins = (self.stopwatch_ms // 60000) % 100
+        self.stopwatch_ms += 1000
+        hours = self.stopwatch_ms // 3600000
+        mins = (self.stopwatch_ms // 60000) % 60
         secs = (self.stopwatch_ms // 1000) % 60
-        tenths = (self.stopwatch_ms // 100) % 10
-        self.stopwatch_container.lbl_time.setText(f"{mins:02d}:{secs:02d}.{tenths:d}")
+        self.stopwatch_container.lbl_time.setText(f"{hours:02d}:{mins:02d}:{secs:02d}")
 
     def handle_play_stop(self):
         if not self.is_timer_running:
@@ -331,7 +331,7 @@ class FloatingToolbar(QWidget):
 
     def restart_stopwatch(self):
         self.stopwatch_ms = 0
-        self.stopwatch_container.lbl_time.setText("00:00.0")
+        self.stopwatch_container.lbl_time.setText("00:00:00")
 
     def paintEvent(self, event):
         # We draw the static glassy rounded rect
