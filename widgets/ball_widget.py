@@ -49,6 +49,7 @@ class BallWidget(QWidget):
         self.width_anim = QPropertyAnimation(self, b"current_width", self)
         self.width_anim.setDuration(350)
         self.width_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        self.width_anim.finished.connect(self.on_width_anim_finished)
         
     def init_ui(self):
         layout = QHBoxLayout(self)
@@ -116,6 +117,7 @@ class BallWidget(QWidget):
         self.setFixedWidth(40)
         self.lbl_task.hide()
         self.lbl_task.setText("")
+        self.task_color = None
         self.original_x = self.x()
         self.reminder_timer.start()
 
@@ -123,6 +125,11 @@ class BallWidget(QWidget):
         super().hideEvent(event)
         self.reminder_timer.stop()
         self.width_anim.stop()
+
+    def on_width_anim_finished(self):
+        if self.width() <= 45:
+            self.task_color = None
+            self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -170,6 +177,10 @@ class BallWidget(QWidget):
             
         # Select random task from lists
         random_task = random.choice(self.parent_window.tasks)
+        
+        # Get task color dynamically
+        from widgets.task_card import get_task_color
+        self.task_color = QColor(get_task_color(random_task))
         # Elide text if too long
         if len(random_task) > 28:
             random_task = random_task[:25] + "..."
@@ -208,14 +219,32 @@ class BallWidget(QWidget):
         painter.setBrush(bg_color)
         
         # Paint glowing active-accent border
-        border_color = QColor(theme.ACCENT_COLOR) if self._hovered else QColor(theme.BORDER_COLOR)
-        painter.setPen(QPen(border_color, 1.5))
-        
+        if self.width() > 45 and hasattr(self, 'task_color') and self.task_color:
+            # We are expanded and showing a task - draw a glowing outline with task color
+            border_color = self.task_color
+            
+            # Subtle soft glow backdrop
+            glow_color = QColor(self.task_color)
+            glow_color.setAlpha(60)
+            painter.setPen(QPen(glow_color, 4.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect, 20.0, 20.0)
+            
+            # Sharp main border
+            painter.setPen(QPen(border_color, 1.5))
+            painter.setBrush(bg_color)
+        else:
+            border_color = QColor(theme.ACCENT_COLOR) if self._hovered else QColor(theme.BORDER_COLOR)
+            painter.setPen(QPen(border_color, 1.5))
+            
         # Draw rounded rect capsule
         painter.drawRoundedRect(rect, 20.0, 20.0)
         
         # Paint the Ticky checkmark icon inside the spacer widget rect (at right coordinates)
-        icon_color = QColor(theme.ACCENT_COLOR) if self._hovered else QColor(theme.TEXT_PRIMARY)
+        if self.width() > 45 and hasattr(self, 'task_color') and self.task_color:
+            icon_color = self.task_color
+        else:
+            icon_color = QColor(theme.ACCENT_COLOR) if self._hovered else QColor(theme.TEXT_PRIMARY)
         
         painter.save()
         # Translate to the right side of the capsule (width - 30px)
