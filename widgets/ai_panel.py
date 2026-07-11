@@ -362,6 +362,8 @@ class AIPanel(QWidget):
         self.height_anim.stop()
         self.height_anim.setStartValue(self.height())
         if self.is_expanded:
+            # Clear previous session's messages every time the panel opens
+            self.clear_chat()
             self.update_welcome_text()
             self.height_anim.setEndValue(190)
         else:
