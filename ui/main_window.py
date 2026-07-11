@@ -90,7 +90,7 @@ class AnimatedButton(QPushButton):
 class SpotifyMenuButton(QPushButton):
     def __init__(self, parent=None):
         super().__init__("", parent)
-        self.setFixedSize(20, 20)
+        self.setFixedSize(28, 28)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._hovered = False
         
@@ -120,7 +120,7 @@ class SpotifyMenuButton(QPushButton):
         from PySide6.QtSvg import QSvgRenderer
         from PySide6.QtCore import QByteArray, QRectF
         renderer = QSvgRenderer(QByteArray(dots_svg.encode('utf-8')))
-        renderer.render(painter, QRectF(4.0, 4.0, 12.0, 12.0))
+        renderer.render(painter, QRectF(6.0, 6.0, 16.0, 16.0))
 
 
 class MainWindow(QWidget):
@@ -503,9 +503,9 @@ class MainWindow(QWidget):
             if item and item.widget():
                 item.widget().hide()
                 
-        # Setup compact dimensions and layout - set width to 320px
-        self.setFixedWidth(320)
-        self.container.setFixedWidth(320)
+        # Setup compact dimensions and layout - set width to 340px
+        self.setFixedWidth(340)
+        self.container.setFixedWidth(340)
         
         # Save original layout margins
         m = self.container.layout().contentsMargins()
@@ -519,7 +519,7 @@ class MainWindow(QWidget):
         self.spotify_panel.set_mini_mode(True)
         self.spotify_panel.show()
         self.spotify_panel.is_expanded = True
-        self.spotify_panel.setFixedHeight(94) # Card height (card is 94px inside panel)
+        self.spotify_panel.setFixedHeight(114) # Card height + top/bottom spacing (114px)
         
         # Start updates
         self.spotify_panel.update_playback()
@@ -529,7 +529,7 @@ class MainWindow(QWidget):
             
         # Position menu button in top-left of vinyl cover
         self.spotify_menu_btn.setParent(self)
-        self.spotify_menu_btn.move(14, 14)
+        self.spotify_menu_btn.move(24, 24)
         self.spotify_menu_btn.show()
         self.spotify_menu_btn.raise_()
         

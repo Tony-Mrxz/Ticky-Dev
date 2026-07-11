@@ -40,7 +40,7 @@ def save_always_on_top(value):
     """Save the always_on_top boolean setting."""
     save_config({"always_on_top": value})
 
-def load_accent_color(default_hex="#4CC2FF"):
+def load_accent_color(default_hex="#FF9F0A"):
     """Load the accent color hex value."""
     return load_config().get("accent_color", default_hex)
 
@@ -144,7 +144,7 @@ def save_show_seconds(value):
     """Save whether to show seconds on clock."""
     save_config({"show_seconds": value})
 
-def load_clock_style(default_value="classic"):
+def load_clock_style(default_value="neon"):
     """Load the selected clock display style."""
     return load_config().get("clock_style", default_value)
 
@@ -184,7 +184,7 @@ def save_idle_minutes(value):
     """Save the number of minutes of idle time before minimizing."""
     save_config({"idle_minutes": value})
 
-def load_start_on_startup(default_value=False):
+def load_start_on_startup(default_value=True):
     """Load whether Ticky should start automatically on Windows startup."""
     return load_config().get("start_on_startup", default_value)
 

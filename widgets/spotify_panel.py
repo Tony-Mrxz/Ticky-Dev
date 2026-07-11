@@ -217,8 +217,8 @@ class SpotifyPanel(QWidget):
 
     def set_mini_mode(self, active):
         if active:
-            self.setFixedWidth(320)
-            self.layout().setContentsMargins(0, 0, 0, 0)
+            self.setFixedWidth(340)
+            self.layout().setContentsMargins(10, 10, 10, 10)
         else:
             self.setFixedWidth(280)
             self.layout().setContentsMargins(0, 10, 0, 0)

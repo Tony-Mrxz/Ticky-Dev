@@ -3,10 +3,14 @@
 
 import os
 import sys
-import winreg
 
 def set_startup(enabled):
     """Enable or disable Ticky starting automatically on Windows login."""
+    if sys.platform != 'win32':
+        return
+        
+    import winreg
+    
     if getattr(sys, 'frozen', False):
         app_path = sys.executable
     else:

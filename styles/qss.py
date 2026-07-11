@@ -216,7 +216,7 @@ def get_settings_style():
     ar = int(accent_hex[0:2], 16)
     ag = int(accent_hex[2:4], 16)
     ab = int(accent_hex[4:6], 16)
-    rgba_accent_bg = f"rgba({ar}, {ag}, {ab}, 0.12)"
+    rgba_accent_bg = f"rgba({ar}, {ag}, {ab}, 0.1)"
     
     return f"""
         QWidget#SettingsWindowContainer {{
@@ -226,21 +226,21 @@ def get_settings_style():
         }}
         QWidget#SettingsSidebar {{
             background-color: rgba(255, 255, 255, 0.015);
-            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.04);
             border-top-left-radius: 15px;
             border-bottom-left-radius: 15px;
         }}
         QLabel#SidebarTitle {{
-            color: {theme.TEXT_SECONDARY};
+            color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
             background-color: transparent;
             padding-left: 12px;
-            padding-top: 14px;
-            padding-bottom: 6px;
+            padding-top: 18px;
+            padding-bottom: 10px;
         }}
         QPushButton#SidebarButton {{
             background-color: transparent;
@@ -252,6 +252,7 @@ def get_settings_style():
             font-weight: 600;
             padding: 8px 12px;
             text-align: left;
+            margin: 0px 4px;
         }}
         QPushButton#SidebarButton:hover {{
             background-color: {theme.HOVER_COLOR};
@@ -260,7 +261,11 @@ def get_settings_style():
         QPushButton#SidebarButton[active="true"] {{
             background-color: {rgba_accent_bg};
             color: {theme.ACCENT_COLOR};
+            border-left: 3px solid {theme.ACCENT_COLOR};
+            border-top-left-radius: 0px;
+            border-bottom-left-radius: 0px;
             font-weight: 700;
+            padding-left: 9px;
         }}
         QLabel#SettingsTitle {{
             color: {theme.TEXT_PRIMARY};
@@ -305,16 +310,17 @@ def get_settings_style():
         QLabel#SettingSectionTitle {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.5px;
             background-color: transparent;
-            padding-bottom: 2px;
+            padding-top: 8px;
+            padding-bottom: 4px;
         }}
         QFrame#SettingSection {{
             background-color: {theme.MAIN_CARD_COLOR};
             border: 1px solid {theme.BORDER_COLOR};
-            border-radius: 8px;
+            border-radius: 10px;
         }}
         QFrame#SettingRowDivider {{
             background-color: {theme.BORDER_COLOR};
@@ -325,6 +331,15 @@ def get_settings_style():
             background: transparent;
         }}
         QWidget#ClockScrollContent {{
+            background: transparent;
+        }}
+        QWidget#GeneralScrollContent {{
+            background: transparent;
+        }}
+        QWidget#TasksScrollContent {{
+            background: transparent;
+        }}
+        QWidget#SpotifyScrollContent {{
             background: transparent;
         }}
         QLineEdit#SpotifyInput {{
@@ -361,9 +376,9 @@ def get_settings_style():
             background: {theme.ACCENT_COLOR};
         }}
         QPushButton#ExitButton {{
-            background-color: rgba(255, 69, 58, 0.08);
+            background-color: rgba(255, 69, 58, 0.06);
             color: #FF453A;
-            border: 1px solid rgba(255, 69, 58, 0.15);
+            border: 1px solid rgba(255, 69, 58, 0.12);
             border-radius: 6px;
             font-family: {theme.FONT_FAMILY};
             font-size: 11px;
@@ -373,8 +388,8 @@ def get_settings_style():
             max-height: 28px;
         }}
         QPushButton#ExitButton:hover {{
-            background-color: rgba(255, 69, 58, 0.15);
-            border: 1px solid rgba(255, 69, 58, 0.25);
+            background-color: rgba(255, 69, 58, 0.12);
+            border: 1px solid rgba(255, 69, 58, 0.22);
         }}
         QPushButton#FontItemButton {{
             background-color: {theme.MAIN_CARD_COLOR};
@@ -422,13 +437,13 @@ def get_settings_style():
         QScrollBar:vertical {{
             border: none;
             background: transparent;
-            width: 4px;
+            width: 6px;
             margin: 0;
         }}
         QScrollBar::handle:vertical {{
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.12);
             min-height: 20px;
-            border-radius: 2px;
+            border-radius: 3px;
         }}
         QScrollBar::handle:vertical:hover {{
             background: {theme.ACCENT_COLOR};
@@ -444,13 +459,13 @@ def get_settings_style():
         QScrollBar:horizontal {{
             border: none;
             background: transparent;
-            height: 4px;
+            height: 6px;
             margin: 0;
         }}
         QScrollBar::handle:horizontal {{
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.12);
             min-width: 20px;
-            border-radius: 2px;
+            border-radius: 3px;
         }}
         QScrollBar::handle:horizontal:hover {{
             background: {theme.ACCENT_COLOR};

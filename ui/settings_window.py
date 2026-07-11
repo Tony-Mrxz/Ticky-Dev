@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent
 from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QGraphicsDropShadowEffect, 
-                               QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea)
+                               QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea,
+                               QGraphicsOpacityEffect)
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from styles import theme, qss
 from utils import config
@@ -14,6 +15,7 @@ class ToggleSwitch(QAbstractButton):
         self.setCheckable(True)
         self.setFixedSize(36, 20)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hovered = False
         
         # Position of the sliding handle (circle)
         # Range is from 3.0 (unchecked/left) to 19.0 (checked/right)
@@ -21,6 +23,16 @@ class ToggleSwitch(QAbstractButton):
         self.anim = QPropertyAnimation(self, b"handle_position", self)
         self.anim.setDuration(160)
         self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
 
     @Property(float)
     def handle_position(self):
@@ -60,7 +72,11 @@ class ToggleSwitch(QAbstractButton):
             handle_color = QColor(255, 255, 255, 100)
         else:
             off_color = QColor(theme.HOVER_COLOR)
-            on_color = QColor(theme.ACCENT_COLOR)
+            if self._hovered:
+                off_color = off_color.lighter(115)
+                on_color = QColor(theme.ACCENT_COLOR).lighter(105)
+            else:
+                on_color = QColor(theme.ACCENT_COLOR)
             handle_color = QColor(255, 255, 255)
             
         r = off_color.red() + int((on_color.red() - off_color.red()) * factor)
@@ -203,15 +219,15 @@ class SettingsWindow(QWidget):
         self.is_dragging = False
         
         self.init_ui()
-        
+
     def init_ui(self):
         # Increased window size to landscape orientation for sidebar dashboard layout
-        self.setFixedSize(480, 430)
+        self.setFixedSize(520, 450)
         
         # Main Outer Container Frame
         self.container = QFrame(self)
         self.container.setObjectName("SettingsWindowContainer")
-        self.container.setFixedSize(480, 430)
+        self.container.setFixedSize(520, 450)
         
         main_layout = QHBoxLayout(self.container)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -220,15 +236,15 @@ class SettingsWindow(QWidget):
         # 1. Left Sidebar layout panel
         self.sidebar = QFrame(self.container)
         self.sidebar.setObjectName("SettingsSidebar")
-        self.sidebar.setFixedWidth(130)
+        self.sidebar.setFixedWidth(135)
         
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(10, 16, 10, 16)
         sidebar_layout.setSpacing(6)
         sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
-        # Sidebar Categories Title
-        sidebar_title = QLabel("Appearance", self.sidebar)
+        # Sidebar Categories Title - changed to Ticky Settings
+        sidebar_title = QLabel("Ticky Settings", self.sidebar)
         sidebar_title.setObjectName("SidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
         
@@ -284,145 +300,130 @@ class SettingsWindow(QWidget):
         
         # Stacked Widget for pages
         self.stacked_widget = QStackedWidget(content_widget)
-        self.stacked_widget.setFixedHeight(290)
+        self.stacked_widget.setFixedHeight(310)
+        
+        # Opacity effect for page transitions
+        self.opacity_effect = QGraphicsOpacityEffect(self.stacked_widget)
+        self.stacked_widget.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setEnabled(False)
+        self.page_fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.page_fade_anim.setDuration(160)
+        self.page_fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.page_fade_anim.finished.connect(lambda: self.opacity_effect.setEnabled(False))
         
         # --- Page 1: General Settings ---
         page_general = QWidget()
-        gen_layout = QVBoxLayout(page_general)
-        gen_layout.setContentsMargins(0, 4, 0, 4)
-        gen_layout.setSpacing(10)
+        page_general_layout = QVBoxLayout(page_general)
+        page_general_layout.setContentsMargins(0, 0, 0, 0)
+        page_general_layout.setSpacing(10)
         
-        # Always on Top Row
-        aot_layout = QHBoxLayout()
-        lbl_aot_text = QVBoxLayout()
-        lbl_aot_text.setSpacing(2)
-        lbl_aot = QLabel("Always on Top", page_general)
-        lbl_aot.setObjectName("SettingLabel")
-        lbl_aot_desc = QLabel("Keep Ticky visible over windows", page_general)
-        lbl_aot_desc.setObjectName("SettingDescription")
-        lbl_aot_text.addWidget(lbl_aot)
-        lbl_aot_text.addWidget(lbl_aot_desc)
+        gen_scroll = QScrollArea(page_general)
+        gen_scroll.setObjectName("GeneralSettingsScroll")
+        gen_scroll.setWidgetResizable(True)
+        gen_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
-        self.switch_aot = ToggleSwitch(page_general)
+        gen_content = QWidget()
+        gen_content.setObjectName("GeneralScrollContent")
+        gen_content_layout = QVBoxLayout(gen_content)
+        gen_content_layout.setContentsMargins(0, 2, 6, 2)
+        gen_content_layout.setSpacing(12)
+        
+        def _add_gen_row(layout, label, desc, widget):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 8, 0, 8)
+            text_col = QVBoxLayout()
+            text_col.setSpacing(1)
+            parent = layout.parentWidget()
+            lbl = QLabel(label, parent)
+            lbl.setObjectName("SettingLabel")
+            lbl_desc = QLabel(desc, parent)
+            lbl_desc.setObjectName("SettingDescription")
+            text_col.addWidget(lbl)
+            text_col.addWidget(lbl_desc)
+            row.addLayout(text_col, 1)
+            row.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(row)
+            
+        def _add_divider(layout):
+            parent = layout.parentWidget()
+            div = QFrame(parent)
+            div.setObjectName("SettingRowDivider")
+            div.setFixedHeight(1)
+            layout.addWidget(div)
+            
+        # Behavior Card
+        window_section = QFrame(gen_content)
+        window_section.setObjectName("SettingSection")
+        window_inner = QVBoxLayout(window_section)
+        window_inner.setContentsMargins(12, 10, 12, 10)
+        window_inner.setSpacing(0)
+        
+        self.switch_aot = ToggleSwitch(window_section)
         self.switch_aot.setChecked(config.load_always_on_top())
-        aot_layout.addLayout(lbl_aot_text)
-        aot_layout.addStretch()
-        aot_layout.addWidget(self.switch_aot)
-        gen_layout.addLayout(aot_layout)
+        _add_gen_row(window_inner, "Always on Top", "Keep Ticky visible over other windows", self.switch_aot)
         
-        # 24H Format Row
-        tfh_layout = QHBoxLayout()
-        lbl_tfh_text = QVBoxLayout()
-        lbl_tfh_text.setSpacing(2)
-        lbl_tfh = QLabel("24-Hour Format", page_general)
-        lbl_tfh.setObjectName("SettingLabel")
-        lbl_tfh_desc = QLabel("Display clock using 24-hour style", page_general)
-        lbl_tfh_desc.setObjectName("SettingDescription")
-        lbl_tfh_text.addWidget(lbl_tfh)
-        lbl_tfh_text.addWidget(lbl_tfh_desc)
+        _add_divider(window_inner)
         
-        self.switch_tfh = ToggleSwitch(page_general)
-        self.switch_tfh.setChecked(config.load_use_24h())
-        tfh_layout.addLayout(lbl_tfh_text)
-        tfh_layout.addStretch()
-        tfh_layout.addWidget(self.switch_tfh)
-        gen_layout.addLayout(tfh_layout)
-        
-        # Show Date Row
-        dat_layout = QHBoxLayout()
-        lbl_dat_text = QVBoxLayout()
-        lbl_dat_text.setSpacing(2)
-        lbl_dat = QLabel("Show Date", page_general)
-        lbl_dat.setObjectName("SettingLabel")
-        lbl_dat_desc = QLabel("Display date under the clock", page_general)
-        lbl_dat_desc.setObjectName("SettingDescription")
-        lbl_dat_text.addWidget(lbl_dat)
-        lbl_dat_text.addWidget(lbl_dat_desc)
-        
-        self.switch_dat = ToggleSwitch(page_general)
-        self.switch_dat.setChecked(config.load_show_date())
-        dat_layout.addLayout(lbl_dat_text)
-        dat_layout.addStretch()
-        dat_layout.addWidget(self.switch_dat)
-        gen_layout.addLayout(dat_layout)
-        
-        # Pin Position Row
-        pin_layout = QHBoxLayout()
-        lbl_pin_text = QVBoxLayout()
-        lbl_pin_text.setSpacing(2)
-        lbl_pin = QLabel("Pin Window Position", page_general)
-        lbl_pin.setObjectName("SettingLabel")
-        lbl_pin_desc = QLabel("Lock window position and disable dragging", page_general)
-        lbl_pin_desc.setObjectName("SettingDescription")
-        lbl_pin_text.addWidget(lbl_pin)
-        lbl_pin_text.addWidget(lbl_pin_desc)
-        
-        self.switch_pin = ToggleSwitch(page_general)
-        self.switch_pin.setChecked(config.load_pin_position())
-        pin_layout.addLayout(lbl_pin_text)
-        pin_layout.addStretch()
-        pin_layout.addWidget(self.switch_pin)
-        gen_layout.addLayout(pin_layout)
-        
-        # Stick on Desktop Row
-        sod_layout = QHBoxLayout()
-        lbl_sod_text = QVBoxLayout()
-        lbl_sod_text.setSpacing(2)
-        lbl_sod = QLabel("Stick on Desktop", page_general)
-        lbl_sod.setObjectName("SettingLabel")
-        lbl_sod_desc = QLabel("Pin Ticky to the background behind windows", page_general)
-        lbl_sod_desc.setObjectName("SettingDescription")
-        lbl_sod_text.addWidget(lbl_sod)
-        lbl_sod_text.addWidget(lbl_sod_desc)
-        
-        self.switch_sod = ToggleSwitch(page_general)
-        self.switch_sod.setChecked(config.load_stick_on_desktop())
-        sod_layout.addLayout(lbl_sod_text)
-        sod_layout.addStretch()
-        sod_layout.addWidget(self.switch_sod)
-        gen_layout.addLayout(sod_layout)
-        
-        # Start on Windows Startup Row
-        sos_layout = QHBoxLayout()
-        lbl_sos_text = QVBoxLayout()
-        lbl_sos_text.setSpacing(2)
-        lbl_sos = QLabel("Start on Startup", page_general)
-        lbl_sos.setObjectName("SettingLabel")
-        lbl_sos_desc = QLabel("Open Ticky automatically when you sign in", page_general)
-        lbl_sos_desc.setObjectName("SettingDescription")
-        lbl_sos_text.addWidget(lbl_sos)
-        lbl_sos_text.addWidget(lbl_sos_desc)
-        
-        self.switch_sos = ToggleSwitch(page_general)
+        self.switch_sos = ToggleSwitch(window_section)
         self.switch_sos.setChecked(config.load_start_on_startup())
-        sos_layout.addLayout(lbl_sos_text)
-        sos_layout.addStretch()
-        sos_layout.addWidget(self.switch_sos)
-        gen_layout.addLayout(sos_layout)
+        _add_gen_row(window_inner, "Start on Startup", "Open Ticky automatically when you sign in", self.switch_sos)
         
-        # Minimize on Inactivity Row
-        moi_layout = QHBoxLayout()
-        lbl_moi_text = QVBoxLayout()
-        lbl_moi_text.setSpacing(2)
-        self.lbl_moi = QLabel("Minimize on Inactivity", page_general)
+        _add_divider(window_inner)
+        
+        self.switch_pin = ToggleSwitch(window_section)
+        self.switch_pin.setChecked(config.load_pin_position())
+        _add_gen_row(window_inner, "Pin Position", "Lock window position and disable dragging", self.switch_pin)
+        
+        _add_divider(window_inner)
+        
+        self.switch_sod = ToggleSwitch(window_section)
+        self.switch_sod.setChecked(config.load_stick_on_desktop())
+        _add_gen_row(window_inner, "Stick on Desktop", "Pin Ticky to the background behind windows", self.switch_sod)
+        
+        # Display Card
+        display_section = QFrame(gen_content)
+        display_section.setObjectName("SettingSection")
+        display_inner = QVBoxLayout(display_section)
+        display_inner.setContentsMargins(12, 10, 12, 10)
+        display_inner.setSpacing(0)
+        
+        self.switch_tfh = ToggleSwitch(display_section)
+        self.switch_tfh.setChecked(config.load_use_24h())
+        _add_gen_row(display_inner, "24-Hour Format", "Display clock using 24-hour style", self.switch_tfh)
+        
+        _add_divider(display_inner)
+        
+        self.switch_dat = ToggleSwitch(display_section)
+        self.switch_dat.setChecked(config.load_show_date())
+        _add_gen_row(display_inner, "Show Date", "Display date under the clock", self.switch_dat)
+        
+        # Idle minimize card
+        idle_section = QFrame(gen_content)
+        idle_section.setObjectName("SettingSection")
+        idle_inner = QVBoxLayout(idle_section)
+        idle_inner.setContentsMargins(12, 10, 12, 10)
+        idle_inner.setSpacing(0)
+        
+        idle_row = QHBoxLayout()
+        idle_row.setContentsMargins(0, 8, 0, 8)
+        idle_text_col = QVBoxLayout()
+        idle_text_col.setSpacing(1)
+        self.lbl_moi = QLabel("Minimize on Inactivity", idle_section)
         self.lbl_moi.setObjectName("SettingLabel")
-        self.lbl_moi_desc = QLabel("Auto-minimize to a floating ball after minutes", page_general)
+        self.lbl_moi_desc = QLabel("Auto-minimize to a floating ball after minutes", idle_section)
         self.lbl_moi_desc.setObjectName("SettingDescription")
-        lbl_moi_text.addWidget(self.lbl_moi)
-        lbl_moi_text.addWidget(self.lbl_moi_desc)
-        
-        moi_layout.addLayout(lbl_moi_text)
-        moi_layout.addStretch()
+        idle_text_col.addWidget(self.lbl_moi)
+        idle_text_col.addWidget(self.lbl_moi_desc)
+        idle_row.addLayout(idle_text_col, 1)
         
         from PySide6.QtWidgets import QSpinBox
-        self.spin_idle_minutes = QSpinBox(page_general)
+        self.spin_idle_minutes = QSpinBox(idle_section)
         self.spin_idle_minutes.setRange(1, 60)
         self.spin_idle_minutes.setSuffix(" min")
         self.spin_idle_minutes.setValue(config.load_idle_minutes())
         self.spin_idle_minutes.setFixedWidth(70)
         self.spin_idle_minutes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.spin_idle_minutes.setObjectName("SettingSpinBox")
-        
         self.spin_idle_minutes.setStyleSheet(f"""
             QSpinBox#SettingSpinBox {{
                 background-color: {theme.MAIN_CARD_COLOR};
@@ -443,10 +444,9 @@ class SettingsWindow(QWidget):
             }}
         """)
         
-        self.switch_minimize_idle = ToggleSwitch(page_general)
+        self.switch_minimize_idle = ToggleSwitch(idle_section)
         self.switch_minimize_idle.setChecked(config.load_minimize_on_idle())
         
-        # Initial dependency checks
         aot_on = self.switch_aot.isChecked()
         self.switch_minimize_idle.setEnabled(aot_on)
         self.spin_idle_minutes.setEnabled(aot_on)
@@ -455,35 +455,53 @@ class SettingsWindow(QWidget):
         if not aot_on:
             self.switch_minimize_idle.setChecked(False)
             
-        moi_layout.addWidget(self.spin_idle_minutes)
-        moi_layout.addSpacing(10)
-        moi_layout.addWidget(self.switch_minimize_idle)
-        gen_layout.addLayout(moi_layout)
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(10)
+        controls_layout.addWidget(self.spin_idle_minutes)
+        controls_layout.addWidget(self.switch_minimize_idle)
+        idle_row.addLayout(controls_layout, 0)
+        idle_inner.addLayout(idle_row)
         
-        # Connect mutual exclusion signals
         self.switch_aot.toggled_state.connect(self.on_aot_toggled)
         self.switch_sod.toggled_state.connect(self.on_sod_toggled)
         
-        # Save Button
+        lbl_sys_title = QLabel("System & Behavior", gen_content)
+        lbl_sys_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_sys_title)
+        gen_content_layout.addWidget(window_section)
+        
+        lbl_disp_title = QLabel("Display Options", gen_content)
+        lbl_disp_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_disp_title)
+        gen_content_layout.addWidget(display_section)
+        
+        lbl_inact_title = QLabel("Inactivity Control", gen_content)
+        lbl_inact_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_inact_title)
+        gen_content_layout.addWidget(idle_section)
+        gen_content_layout.addStretch()
+        
+        gen_scroll.setWidget(gen_content)
+        page_general_layout.addWidget(gen_scroll)
+        
         self.btn_save_general = QPushButton("Save Settings", page_general)
         self.btn_save_general.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save_general.setStyleSheet(self.get_action_button_style())
         self.btn_save_general.clicked.connect(self.save_general_settings)
-        gen_layout.addWidget(self.btn_save_general)
+        page_general_layout.addWidget(self.btn_save_general)
         
         self.stacked_widget.addWidget(page_general)
         
         # --- Page 2: Fonts Selection ---
         page_fonts = QWidget()
-        fonts_layout = QVBoxLayout(page_fonts)
-        fonts_layout.setContentsMargins(0, 4, 0, 4)
-        fonts_layout.setSpacing(10)
+        page_fonts_layout = QVBoxLayout(page_fonts)
+        page_fonts_layout.setContentsMargins(0, 0, 0, 0)
+        page_fonts_layout.setSpacing(10)
         
         lbl_fonts_desc = QLabel("Select active application typeface family:", page_fonts)
         lbl_fonts_desc.setObjectName("SettingDescription")
-        fonts_layout.addWidget(lbl_fonts_desc)
+        page_fonts_layout.addWidget(lbl_fonts_desc)
         
-        # Scrollable area for the list of 10 fonts
         scroll_area = QScrollArea(page_fonts)
         scroll_area.setObjectName("FontsScrollArea")
         scroll_area.setWidgetResizable(True)
@@ -495,16 +513,8 @@ class SettingsWindow(QWidget):
         scroll_content_layout.setSpacing(6)
         
         fonts_list = [
-            "Inter",
-            "Manrope",
-            "Nunito",
-            "DM Sans",
-            "General Sans",
-            "Satoshi",
-            "Plus Jakarta Sans",
-            "Outfit",
-            "IBM Plex Sans",
-            "Space Grotesk"
+            "Inter", "Manrope", "Nunito", "DM Sans", "General Sans",
+            "Satoshi", "Plus Jakarta Sans", "Outfit", "IBM Plex Sans", "Space Grotesk"
         ]
         
         self.font_buttons = []
@@ -512,26 +522,21 @@ class SettingsWindow(QWidget):
             btn_font = QPushButton(font_name, scroll_content)
             btn_font.setObjectName("FontItemButton")
             btn_font.setCursor(Qt.CursorShape.PointingHandCursor)
-            
-            # Apply dynamic preview font families directly on the items
             btn_font.setFont(QFont(font_name, 10, QFont.Weight.Medium))
-            
-            # Highlight current active selection
             is_active = (font_name.lower() == self.selected_font.lower())
             btn_font.setProperty("active", "true" if is_active else "false")
-            
             btn_font.clicked.connect(lambda checked=False, f=font_name: self.on_font_selected(f))
             scroll_content_layout.addWidget(btn_font)
             self.font_buttons.append(btn_font)
             
         scroll_area.setWidget(scroll_content)
-        fonts_layout.addWidget(scroll_area)
+        page_fonts_layout.addWidget(scroll_area)
         
         self.btn_save_fonts = QPushButton("Save Font", page_fonts)
         self.btn_save_fonts.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save_fonts.setStyleSheet(self.get_action_button_style())
         self.btn_save_fonts.clicked.connect(self.save_font_settings)
-        fonts_layout.addWidget(self.btn_save_fonts)
+        page_fonts_layout.addWidget(self.btn_save_fonts)
         
         self.stacked_widget.addWidget(page_fonts)
         
@@ -552,7 +557,6 @@ class SettingsWindow(QWidget):
         clock_layout.setContentsMargins(0, 2, 4, 2)
         clock_layout.setSpacing(10)
 
-        # ── Section: Layout Picker ─────────────────────────────────────
         lbl_style_head = QLabel("Layout", clock_content)
         lbl_style_head.setObjectName("SettingSectionTitle")
         clock_layout.addWidget(lbl_style_head)
@@ -577,7 +581,7 @@ class SettingsWindow(QWidget):
         cards_row_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self.clock_style_cards = {}
-        self.current_clock_style = config.load_clock_style("classic")
+        self.current_clock_style = config.load_clock_style("neon")
 
         clock_style_defs = [
             ("classic", "Classic",  "08:13",   "THU, JUL 10",  "CardPreviewTime"),
@@ -599,11 +603,10 @@ class SettingsWindow(QWidget):
         cards_scroll.setWidget(cards_row)
         clock_layout.addWidget(cards_scroll)
 
-        # ── Section: Display Options ──────────────────────────────────
         options_frame = QFrame(clock_content)
         options_frame.setObjectName("SettingSection")
         options_inner = QVBoxLayout(options_frame)
-        options_inner.setContentsMargins(10, 8, 10, 8)
+        options_inner.setContentsMargins(12, 10, 12, 10)
         options_inner.setSpacing(0)
 
         lbl_options_head = QLabel("Display", options_frame)
@@ -612,7 +615,7 @@ class SettingsWindow(QWidget):
 
         def _add_option_row(label, desc, widget):
             row = QHBoxLayout()
-            row.setContentsMargins(0, 6, 0, 6)
+            row.setContentsMargins(0, 8, 0, 8)
             text_col = QVBoxLayout()
             text_col.setSpacing(1)
             lbl = QLabel(label, options_frame)
@@ -644,7 +647,7 @@ class SettingsWindow(QWidget):
         options_inner.addWidget(sep_opt2)
 
         weight_row = QHBoxLayout()
-        weight_row.setContentsMargins(0, 6, 0, 6)
+        weight_row.setContentsMargins(0, 8, 0, 8)
         weight_text = QVBoxLayout()
         weight_text.setSpacing(1)
         lbl_weight = QLabel("Font Weight", options_frame)
@@ -688,19 +691,33 @@ class SettingsWindow(QWidget):
         
         # --- Page 4: Tasks Customization ---
         page_tasks = QWidget()
-        tasks_page_layout = QVBoxLayout(page_tasks)
-        tasks_page_layout.setContentsMargins(0, 4, 0, 4)
-        tasks_page_layout.setSpacing(12)
+        page_tasks_layout = QVBoxLayout(page_tasks)
+        page_tasks_layout.setContentsMargins(0, 0, 0, 0)
+        page_tasks_layout.setSpacing(10)
         
-        # Color Accent Swatches
-        col_layout = QVBoxLayout()
-        col_layout.setSpacing(6)
-        lbl_col = QLabel("Accent Color", page_tasks)
+        tasks_scroll = QScrollArea(page_tasks)
+        tasks_scroll.setObjectName("TasksSettingsScroll")
+        tasks_scroll.setWidgetResizable(True)
+        tasks_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        tasks_content = QWidget()
+        tasks_content.setObjectName("TasksScrollContent")
+        tasks_content_layout = QVBoxLayout(tasks_content)
+        tasks_content_layout.setContentsMargins(0, 2, 4, 2)
+        tasks_content_layout.setSpacing(12)
+        
+        accent_section = QFrame(tasks_content)
+        accent_section.setObjectName("SettingSection")
+        accent_inner = QVBoxLayout(accent_section)
+        accent_inner.setContentsMargins(12, 10, 12, 10)
+        accent_inner.setSpacing(8)
+        
+        lbl_col = QLabel("Accent Color", accent_section)
         lbl_col.setObjectName("SettingLabel")
-        lbl_col_desc = QLabel("Select the main accent theme color", page_tasks)
+        lbl_col_desc = QLabel("Select the main accent theme color", accent_section)
         lbl_col_desc.setObjectName("SettingDescription")
-        col_layout.addWidget(lbl_col)
-        col_layout.addWidget(lbl_col_desc)
+        accent_inner.addWidget(lbl_col)
+        accent_inner.addWidget(lbl_col_desc)
         
         swatches_layout = QHBoxLayout()
         swatches_layout.setSpacing(10)
@@ -711,37 +728,38 @@ class SettingsWindow(QWidget):
         current_accent = config.load_accent_color()
         for hex_color in colors:
             is_active = (hex_color.lower() == current_accent.lower())
-            swatch = ColorSwatch(hex_color, is_active, page_tasks)
+            swatch = ColorSwatch(hex_color, is_active, accent_section)
             swatch.color_selected.connect(self.on_accent_color_changed)
             swatches_layout.addWidget(swatch)
             self.swatches.append(swatch)
             
-        col_layout.addLayout(swatches_layout)
-        tasks_page_layout.addLayout(col_layout)
+        accent_inner.addLayout(swatches_layout)
         
-        # Font size slider
-        siz_layout = QVBoxLayout()
-        siz_layout.setSpacing(6)
+        size_section = QFrame(tasks_content)
+        size_section.setObjectName("SettingSection")
+        size_inner = QVBoxLayout(size_section)
+        size_inner.setContentsMargins(12, 10, 12, 10)
+        size_inner.setSpacing(8)
         
         slider_header = QHBoxLayout()
-        lbl_siz = QLabel("Task Font Size", page_tasks)
+        lbl_siz = QLabel("Task Font Size", size_section)
         lbl_siz.setObjectName("SettingLabel")
-        self.lbl_siz_val = QLabel(f"{config.load_task_font_size()}px", page_tasks)
+        self.lbl_siz_val = QLabel(f"{config.load_task_font_size()}px", size_section)
         self.lbl_siz_val.setObjectName("SettingDescription")
         self.lbl_siz_val.setStyleSheet("font-weight: bold;")
         slider_header.addWidget(lbl_siz)
         slider_header.addStretch()
         slider_header.addWidget(self.lbl_siz_val)
-        siz_layout.addLayout(slider_header)
+        size_inner.addLayout(slider_header)
         
         slider_container = QHBoxLayout()
         slider_container.setSpacing(8)
-        lbl_min_sz = QLabel("11px", page_tasks)
+        lbl_min_sz = QLabel("11px", size_section)
         lbl_min_sz.setObjectName("SettingDescription")
-        lbl_max_sz = QLabel("16px", page_tasks)
+        lbl_max_sz = QLabel("16px", size_section)
         lbl_max_sz.setObjectName("SettingDescription")
         
-        self.slider_size = QSlider(Qt.Orientation.Horizontal, page_tasks)
+        self.slider_size = QSlider(Qt.Orientation.Horizontal, size_section)
         self.slider_size.setRange(11, 16)
         self.slider_size.setValue(config.load_task_font_size())
         self.slider_size.setSingleStep(1)
@@ -751,36 +769,82 @@ class SettingsWindow(QWidget):
         slider_container.addWidget(lbl_min_sz)
         slider_container.addWidget(self.slider_size)
         slider_container.addWidget(lbl_max_sz)
-        siz_layout.addLayout(slider_container)
-        tasks_page_layout.addLayout(siz_layout)
+        size_inner.addLayout(slider_container)
         
-        # Static notice info card
-        lbl_dynamic_save_notice = QLabel("💡 Colors and font sizes are saved dynamically.", page_tasks)
+        lbl_theme_title = QLabel("Theme Styling", tasks_content)
+        lbl_theme_title.setObjectName("SettingSectionTitle")
+        tasks_content_layout.addWidget(lbl_theme_title)
+        tasks_content_layout.addWidget(accent_section)
+        
+        lbl_text_title = QLabel("Text Configuration", tasks_content)
+        lbl_text_title.setObjectName("SettingSectionTitle")
+        tasks_content_layout.addWidget(lbl_text_title)
+        tasks_content_layout.addWidget(size_section)
+        
+        lbl_dynamic_save_notice = QLabel("💡 Colors and font sizes are saved dynamically.", tasks_content)
         lbl_dynamic_save_notice.setObjectName("SettingDescription")
-        lbl_dynamic_save_notice.setStyleSheet("color: #4CC2FF; padding-top: 8px;")
-        tasks_page_layout.addWidget(lbl_dynamic_save_notice)
-        tasks_page_layout.addStretch()
+        lbl_dynamic_save_notice.setStyleSheet("color: #FF9F0A; padding-top: 8px;")
+        tasks_content_layout.addWidget(lbl_dynamic_save_notice)
+        tasks_content_layout.addStretch()
+        
+        tasks_scroll.setWidget(tasks_content)
+        page_tasks_layout.addWidget(tasks_scroll)
         
         self.stacked_widget.addWidget(page_tasks)
         
         # --- Page 5: Spotify settings ---
         page_spotify = QWidget()
-        spot_layout = QVBoxLayout(page_spotify)
-        spot_layout.setContentsMargins(0, 4, 0, 4)
-        spot_layout.setSpacing(8)
+        page_spotify_layout = QVBoxLayout(page_spotify)
+        page_spotify_layout.setContentsMargins(0, 0, 0, 0)
+        page_spotify_layout.setSpacing(10)
         
-        lbl_spot = QLabel("Spotify Developer API", page_spotify)
-        lbl_spot.setObjectName("SettingLabel")
-        self.lbl_spot_status = QLabel("⚠️ Please link your Spotify account below.", page_spotify)
+        spot_scroll = QScrollArea(page_spotify)
+        spot_scroll.setObjectName("SpotifySettingsScroll")
+        spot_scroll.setWidgetResizable(True)
+        spot_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        spot_content = QWidget()
+        spot_content.setObjectName("SpotifyScrollContent")
+        spot_content_layout = QVBoxLayout(spot_content)
+        spot_content_layout.setContentsMargins(0, 2, 4, 2)
+        spot_content_layout.setSpacing(12)
+        
+        status_section = QFrame(spot_content)
+        status_section.setObjectName("SettingSection")
+        status_inner = QVBoxLayout(status_section)
+        status_inner.setContentsMargins(12, 10, 12, 10)
+        status_inner.setSpacing(8)
+        
+        self.lbl_spot_status = QLabel("⚠️ Please link your Spotify account below.", status_section)
         self.lbl_spot_status.setObjectName("SettingDescription")
+        status_inner.addWidget(self.lbl_spot_status)
+        
+        demo_row = QHBoxLayout()
+        demo_row.setContentsMargins(0, 4, 0, 4)
+        demo_text_col = QVBoxLayout()
+        demo_text_col.setSpacing(2)
+        lbl_demo = QLabel("Spotify Demo Mode", status_section)
+        lbl_demo.setObjectName("SettingLabel")
+        lbl_demo_desc = QLabel("Simulate playback without Spotify credentials", status_section)
+        lbl_demo_desc.setObjectName("SettingDescription")
+        demo_text_col.addWidget(lbl_demo)
+        demo_text_col.addWidget(lbl_demo_desc)
+        
+        self.switch_demo = ToggleSwitch(status_section)
+        self.switch_demo.setChecked(config.load_spotify_demo_mode())
+        self.switch_demo.toggled_state.connect(self.on_demo_mode_toggled)
+        
+        demo_row.addLayout(demo_text_col, 1)
+        demo_row.addWidget(self.switch_demo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        status_inner.addLayout(demo_row)
         
         self.lbl_spotify_guide = QLabel(
             "<b>Setup Instructions:</b><br>"
-            "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#30D158;'>developer.spotify.com/dashboard</a> and log in.<br>"
-            "2. Click <b>Create App</b> (name & description can be anything).<br>"
-            "3. In Settings, add Redirect URI: <code style='color:#FF9F0A;'>http://127.0.0.1:8888/callback</code><br>"
-            "4. Copy the Client ID & Secret from the Dashboard and paste below.", 
-            page_spotify
+            "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#FF9F0A;'>developer.spotify.com/dashboard</a> and log in.<br>"
+            "2. Click <b>Create App</b>.<br>"
+            "3. Add Redirect URI: <code style='color:#FFD60A;'>http://127.0.0.1:8888/callback</code><br>"
+            "4. Paste the Client ID & Secret below.", 
+            status_section
         )
         self.lbl_spotify_guide.setObjectName("SettingDescription")
         self.lbl_spotify_guide.setOpenExternalLinks(True)
@@ -793,52 +857,51 @@ class SettingsWindow(QWidget):
                 font-size: 9px;
             }}
         """)
+        status_inner.addWidget(self.lbl_spotify_guide)
         
-        spot_layout.addWidget(lbl_spot)
-        spot_layout.addWidget(self.lbl_spot_status)
-        spot_layout.addWidget(self.lbl_spotify_guide)
+        creds_section = QFrame(spot_content)
+        creds_section.setObjectName("SettingSection")
+        creds_inner = QVBoxLayout(creds_section)
+        creds_inner.setContentsMargins(12, 10, 12, 10)
+        creds_inner.setSpacing(8)
         
-        # Demo Mode Toggle Row
-        demo_layout = QHBoxLayout()
-        lbl_demo_text = QVBoxLayout()
-        lbl_demo_text.setSpacing(2)
-        lbl_demo = QLabel("Spotify Demo Mode", page_spotify)
-        lbl_demo.setObjectName("SettingLabel")
-        lbl_demo_desc = QLabel("Simulate playback without Spotify credentials", page_spotify)
-        lbl_demo_desc.setObjectName("SettingDescription")
-        lbl_demo_text.addWidget(lbl_demo)
-        lbl_demo_text.addWidget(lbl_demo_desc)
+        lbl_creds_title = QLabel("API Credentials Configuration", creds_section)
+        lbl_creds_title.setObjectName("SettingLabel")
+        creds_inner.addWidget(lbl_creds_title)
         
-        self.switch_demo = ToggleSwitch(page_spotify)
-        self.switch_demo.setChecked(config.load_spotify_demo_mode())
-        self.switch_demo.toggled_state.connect(self.on_demo_mode_toggled)
-        demo_layout.addLayout(lbl_demo_text)
-        demo_layout.addStretch()
-        demo_layout.addWidget(self.switch_demo)
-        spot_layout.addLayout(demo_layout)
-        
-        # Client ID Input
-        self.input_client_id = QLineEdit(page_spotify)
+        self.input_client_id = QLineEdit(creds_section)
         self.input_client_id.setObjectName("SpotifyInput")
         self.input_client_id.setPlaceholderText("Spotify Client ID")
         
-        # Client Secret Input
-        self.input_client_secret = QLineEdit(page_spotify)
+        self.input_client_secret = QLineEdit(creds_section)
         self.input_client_secret.setObjectName("SpotifyInput")
         self.input_client_secret.setPlaceholderText("Spotify Client Secret")
         self.input_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
         
-        # Load existing Spotify credentials
         saved_id, saved_secret = config.load_spotify_credentials()
         self.input_client_id.setText(saved_id)
         self.input_client_secret.setText(saved_secret)
         
-        spot_layout.addWidget(self.input_client_id)
-        spot_layout.addWidget(self.input_client_secret)
+        creds_inner.addWidget(self.input_client_id)
+        creds_inner.addWidget(self.input_client_secret)
         
-        # Connect & Save Credentials Button row
+        lbl_conn_title = QLabel("Connection & Mode", spot_content)
+        lbl_conn_title.setObjectName("SettingSectionTitle")
+        spot_content_layout.addWidget(lbl_conn_title)
+        spot_content_layout.addWidget(status_section)
+        
+        lbl_api_title = QLabel("Developer API Configuration", spot_content)
+        lbl_api_title.setObjectName("SettingSectionTitle")
+        spot_content_layout.addWidget(lbl_api_title)
+        spot_content_layout.addWidget(creds_section)
+        spot_content_layout.addStretch()
+        
+        spot_scroll.setWidget(spot_content)
+        page_spotify_layout.addWidget(spot_scroll)
+        
         spot_btn_layout = QHBoxLayout()
         spot_btn_layout.setSpacing(10)
+        spot_btn_layout.setContentsMargins(0, 4, 0, 0)
         
         self.btn_save_spotify = QPushButton("Save Credentials", page_spotify)
         self.btn_save_spotify.setStyleSheet(self.get_action_button_style())
@@ -852,9 +915,8 @@ class SettingsWindow(QWidget):
         
         spot_btn_layout.addWidget(self.btn_save_spotify)
         spot_btn_layout.addWidget(self.btn_connect_spotify)
-        spot_layout.addLayout(spot_btn_layout)
+        page_spotify_layout.addLayout(spot_btn_layout)
         
-        self.update_spotify_status_ui()
         self.stacked_widget.addWidget(page_spotify)
         
         content_layout.addWidget(self.stacked_widget)
@@ -891,7 +953,9 @@ class SettingsWindow(QWidget):
         self.switch_page(0)
 
     def switch_page(self, index):
-        """Switch stacked pages and update sidebar active state."""
+        """Switch stacked pages and update sidebar active state with a smooth transition."""
+        self.page_fade_anim.stop()
+        self.opacity_effect.setEnabled(False)
         self.stacked_widget.setCurrentIndex(index)
         
         # Update page header title
@@ -904,6 +968,13 @@ class SettingsWindow(QWidget):
             btn.setProperty("active", active_val)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+            
+        if self.isVisible():
+            self.opacity_effect.setEnabled(True)
+            self.opacity_effect.setOpacity(0.0)
+            self.page_fade_anim.setStartValue(0.0)
+            self.page_fade_anim.setEndValue(1.0)
+            self.page_fade_anim.start()
 
     def get_action_button_style(self):
         """Return the standard visual stylesheet for general action buttons."""
@@ -1156,7 +1227,7 @@ class SettingsWindow(QWidget):
         
         if demo:
             self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
-            self.lbl_spot_status.setStyleSheet("color: #4CC2FF; font-weight: bold;")
+            self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
         elif access and refresh:
             self.lbl_spot_status.setText("Status: Linked & Connected")
             self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
@@ -1175,7 +1246,7 @@ class SettingsWindow(QWidget):
             return
             
         self.lbl_spot_status.setText("Status: Connecting... Check your browser")
-        self.lbl_spot_status.setStyleSheet("color: #4CC2FF;")
+        self.lbl_spot_status.setStyleSheet("color: #FF9F0A;")
         
         from utils.spotify import SpotifyOAuthServerThread
         self.oauth_thread = SpotifyOAuthServerThread(c_id, c_secret, self)
@@ -1220,6 +1291,15 @@ class SettingsWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+        
+        # Fade-in window animation
+        self.setWindowOpacity(0.0)
+        self.fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self.fade_anim.setDuration(220)
+        self.fade_anim.setStartValue(0.0)
+        self.fade_anim.setEndValue(1.0)
+        self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.fade_anim.start()
 
     def closeEvent(self, event):
         if self.parent_window and hasattr(self.parent_window, 'toolbar'):

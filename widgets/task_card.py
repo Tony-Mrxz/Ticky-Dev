@@ -3,7 +3,8 @@
 
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QTimer, QByteArray, QRectF
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QGraphicsOpacityEffect, QLineEdit, QPushButton
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
+import random
 from PySide6.QtSvg import QSvgRenderer
 from styles import theme, qss
 
@@ -218,6 +219,17 @@ class TaskCard(QWidget):
         self.setGraphicsEffect(self.opacity_effect)
         self.opacity_effect.setOpacity(1.0)
         
+        # Attention animation timer & setup
+        self._attention_progress = 0.0
+        self.attention_anim = QPropertyAnimation(self, b"attention_progress", self)
+        self.attention_anim.setDuration(2500)
+        self.attention_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        
+        self.attention_timer = QTimer(self)
+        self.attention_timer.setInterval(random.randint(8000, 30000))
+        self.attention_timer.timeout.connect(self.trigger_attention_animation)
+        self.attention_timer.start()
+        
         self.init_ui(text)
 
     @Property(float)
@@ -228,6 +240,27 @@ class TaskCard(QWidget):
     def hover_lift(self, val):
         self._hover_lift = val
         self.update()
+
+    @Property(float)
+    def attention_progress(self):
+        return self._attention_progress
+
+    @attention_progress.setter
+    def attention_progress(self, val):
+        self._attention_progress = val
+        self.update()
+
+    def trigger_attention_animation(self):
+        if self.checkbox.isChecked() or self.play_button._active:
+            self.attention_timer.setInterval(random.randint(15000, 45000))
+            return
+            
+        self.attention_anim.stop()
+        self.attention_anim.setStartValue(0.0)
+        self.attention_anim.setEndValue(2.0)
+        self.attention_anim.start()
+        
+        self.attention_timer.setInterval(random.randint(15000, 45000))
 
     def init_ui(self, text):
         layout = QHBoxLayout(self)
@@ -377,6 +410,49 @@ class TaskCard(QWidget):
             
         painter.setPen(QPen(border_color, 1))
         painter.drawRoundedRect(card_rect, 12, 12)
+        
+        # Paint attention glow / fill animation
+        if self._attention_progress > 0.0 and not is_checked:
+            # Determine path of the card border
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(card_rect), 12.0, 12.0)
+            
+            # Calculate perimeter
+            P = 2 * (card_rect.width() + card_rect.height())
+            
+            if P > 0:
+                # Progress-based metrics
+                if self._attention_progress <= 1.0:
+                    fill_len = self._attention_progress * P
+                    space_len = (1.0 - self._attention_progress) * P
+                    glow_opacity = self._attention_progress
+                else:
+                    fill_len = P
+                    space_len = 0.0
+                    glow_opacity = 2.0 - self._attention_progress
+                    
+                # Draw glow base (soft wider stroke)
+                glow_color = QColor(self.color)
+                glow_alpha = int(80 * glow_opacity)
+                glow_color.setAlpha(glow_alpha)
+                
+                glow_pen = QPen(glow_color, 3.5)
+                if fill_len < P:
+                    glow_pen.setDashPattern([fill_len, space_len])
+                painter.setPen(glow_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(path)
+                
+                # Draw sharp highlight (thin sharp stroke)
+                sharp_color = QColor(self.color)
+                sharp_alpha = int(220 * glow_opacity)
+                sharp_color.setAlpha(sharp_alpha)
+                
+                sharp_pen = QPen(sharp_color, 1.2)
+                if fill_len < P:
+                    sharp_pen.setDashPattern([fill_len, space_len])
+                painter.setPen(sharp_pen)
+                painter.drawPath(path)
 
 
 class TaskInputFieldCard(QWidget):

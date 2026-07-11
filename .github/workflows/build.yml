@@ -1,0 +1,61 @@
+name: Build Ticky Release Binaries
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact-name: Ticky-Windows.exe
+            output-path: dist/Ticky.exe
+          - os: macos-latest
+            artifact-name: Ticky-macOS.dmg
+            output-path: dist/Ticky.dmg
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller Ticky.spec
+
+      - name: Build with PyInstaller and Package DMG (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          pyinstaller Ticky.spec
+          # Package the .app bundle into a DMG installer
+          hdiutil create -fs HFS+ -volname "Ticky" -srcfolder dist/Ticky.app dist/Ticky.dmg
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-build
+          path: ${{ matrix.output-path }}
+          if-no-files-found: error

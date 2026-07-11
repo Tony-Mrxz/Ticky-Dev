@@ -9,7 +9,7 @@ MAIN_CARD_COLOR = "#171A21"   # Layer 2 card background
 SEC_CARD_COLOR = "#202530"    # Layer 3 elevated card background / toolbar
 HOVER_COLOR = "#272D38"       # Highlight hover state color
 BORDER_COLOR = "rgba(255, 255, 255, 0.06)"  # 1px border highlight
-ACCENT_COLOR = config.load_accent_color("#4CC2FF")      # Windows 11 accent blue
+ACCENT_COLOR = config.load_accent_color("#FF9F0A")      # Windows 11 accent orange (Default)
 SUCCESS_COLOR = "#45D483"     # Active checkmark green
 TEXT_PRIMARY = "#F2F4F8"      # Bright primary readability text
 TEXT_SECONDARY = "#9AA3B2"    # Muted secondary typography text
@@ -51,7 +51,7 @@ USE_24H = config.load_use_24h(True)
 SHOW_DATE = config.load_show_date(True)
 PIN_POSITION = config.load_pin_position(False)
 SHOW_SECONDS = config.load_show_seconds(True)
-CLOCK_STYLE = config.load_clock_style("classic")   # classic | split | casio | minimal | neon
+CLOCK_STYLE = config.load_clock_style("neon")   # classic | split | casio | minimal | neon
 CLOCK_BOX_BG = config.load_clock_box_bg(False)    # Draw glass toolbar-style background box
 STICK_ON_DESKTOP = config.load_stick_on_desktop(False)
 

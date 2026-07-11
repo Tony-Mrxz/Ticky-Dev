@@ -83,6 +83,13 @@ def main():
         }}
     """)
     
+    # Set default startup registry key if not already configured
+    from utils import config
+    if config.load_config().get("start_on_startup") is None:
+        from utils.startup import set_startup
+        set_startup(True)
+        config.save_start_on_startup(True)
+
     # Initialize the main UI window
     window = MainWindow()
     window.show()
