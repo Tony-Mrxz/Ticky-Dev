@@ -110,6 +110,20 @@ class BallWidget(QWidget):
         self.update()
         super().leaveEvent(event)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._current_width = 40
+        self.setFixedWidth(40)
+        self.lbl_task.hide()
+        self.lbl_task.setText("")
+        self.original_x = self.x()
+        self.reminder_timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.reminder_timer.stop()
+        self.width_anim.stop()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_start_pos = event.globalPosition().toPoint()
@@ -120,7 +134,9 @@ class BallWidget(QWidget):
     def mouseMoveEvent(self, event):
         if self.is_dragging:
             delta = event.globalPosition().toPoint() - self.drag_start_pos
-            self.move(self.window_start_pos + delta)
+            new_pos = self.window_start_pos + delta
+            self.move(new_pos)
+            self.original_x = new_pos.x() + (self.width() - 40)
             event.accept()
 
     def mouseReleaseEvent(self, event):

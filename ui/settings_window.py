@@ -843,7 +843,8 @@ class SettingsWindow(QWidget):
             "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#FF9F0A;'>developer.spotify.com/dashboard</a> and log in.<br>"
             "2. Click <b>Create App</b>.<br>"
             "3. Add Redirect URI: <code style='color:#FFD60A;'>http://127.0.0.1:8888/callback</code><br>"
-            "4. Paste the Client ID & Secret below.", 
+            "4. Paste the Client ID & Secret below.<br>"
+            "<span style='color:#FF453A; font-weight:bold;'>⚠️ Spotify Policy Note:</span> Playback controls (play, pause, skip) require a <b>Spotify Premium</b> account. Free accounts can only fetch currently playing details.", 
             status_section
         )
         self.lbl_spotify_guide.setObjectName("SettingDescription")
