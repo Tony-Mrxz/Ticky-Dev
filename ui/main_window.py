@@ -3,15 +3,16 @@
 
 import ctypes
 import sys
-from PySide6.QtCore import Qt, QPoint, QEvent, QPropertyAnimation, QEasingCurve, Property, QTimer
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QSpacerItem, QMenu
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QCursor
+from PySide6.QtCore import Qt, QPoint, QEvent, QPropertyAnimation, QEasingCurve, Property, QTimer, QRectF, Signal, QByteArray, QSize
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSizePolicy, QSpacerItem, QMenu, QGraphicsOpacityEffect
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QCursor, QPixmap, QIcon
 
 from styles import theme, qss
 from utils import config
 from widgets.clock import ClockWidget
 from widgets.task_card import TaskCard, TaskInputFieldCard
 from widgets.toolbar import FloatingToolbar, ToolbarButton
+from widgets.notepad_widgets import NoteSquareWidget, MaximizedNoteWidget
 
 LEFT_ARROW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="m14.76 6.09-6.11 5.35c-.34.3-.34.83 0 1.13l6.11 5.35c.48.42 1.24.08 1.24-.56V6.65c0-.64-.76-.99-1.24-.56"></path></svg>"""
 
@@ -34,6 +35,40 @@ def adjust_brightness(hex_color, factor):
         return f"#{r:02x}{g:02x}{b:02x}"
     except Exception:
         return f"#{hex_color}"
+
+def parse_shortcut_string(shortcut_str):
+    """Parse a shortcut string like 'Alt+T' to (modifiers, vk) for Windows RegisterHotKey."""
+    if not shortcut_str:
+        return 0, 0
+    parts = [p.strip().lower() for p in shortcut_str.split('+')]
+    modifiers = 0
+    vk = 0
+    
+    # Modifiers: Alt=0x0001, Ctrl=0x0002, Shift=0x0004, Win=0x0008
+    for p in parts:
+        if p in ("alt", "option"):
+            modifiers |= 0x0001
+        elif p in ("ctrl", "control"):
+            modifiers |= 0x0002
+        elif p in ("shift",):
+            modifiers |= 0x0004
+        elif p in ("win", "cmd", "meta", "super"):
+            modifiers |= 0x0008
+        else:
+            # Key code mapping
+            if len(p) == 1:
+                vk = ord(p.upper())
+            elif p.startswith("f") and p[1:].isdigit():
+                f_num = int(p[1:])
+                vk = 0x70 + (f_num - 1) # VK_F1 is 0x70
+            elif p == "space":
+                vk = 0x20
+            elif p == "enter" or p == "return":
+                vk = 0x0D
+            elif p == "escape" or p == "esc":
+                vk = 0x1B
+                
+    return modifiers, vk
 
 
 class AnimatedButton(QPushButton):
@@ -87,6 +122,180 @@ class AnimatedButton(QPushButton):
         )
 
 
+class NewButtonContainer(QWidget):
+    task_clicked = Signal()
+    note_clicked = Signal()
+    
+    PLUS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="COLOR" viewBox="0 0 24 24">
+    <path d="M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z"></path>
+    </svg>"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.expanded = False
+        self.setFixedHeight(38)
+        self.setMinimumWidth(38)
+        self.setMaximumWidth(38)
+        
+        self.btn_task = QPushButton("Task", self)
+        self.btn_task.setObjectName("NewActionSubButton")
+        self.btn_task.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_task.setFixedSize(42, 30)
+        self.btn_task.clicked.connect(self.on_task)
+        self.btn_task.hide()
+        
+        self.btn_note = QPushButton("Note", self)
+        self.btn_note.setObjectName("NewActionSubButton")
+        self.btn_note.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_note.setFixedSize(42, 30)
+        self.btn_note.clicked.connect(self.on_note)
+        self.btn_note.hide()
+        
+        self.btn_new = QPushButton(self)
+        self.btn_new.setObjectName("PlusToggleButton")
+        self.btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_new.setFixedSize(30, 30)
+        self.btn_new.clicked.connect(self.toggle_expand)
+        
+        self.refresh_colors()
+        
+        self.width_anim = QPropertyAnimation(self, b"anim_width", self)
+        self.width_anim.setDuration(250)
+        self.width_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+    @Property(int)
+    def anim_width(self):
+        return self.width()
+        
+    @anim_width.setter
+    def anim_width(self, w):
+        self.setFixedWidth(w)
+        if self.parent() and hasattr(self.parent(), "adjust_layout_height"):
+            self.parent().adjust_layout_height()
+            
+    def update_icons(self):
+        from PySide6.QtSvg import QSvgRenderer
+        
+        # Color of the plus icon inside the circle
+        color_hex = "#FFFFFF"
+        
+        svg_str = self.PLUS_SVG.replace("COLOR", color_hex)
+        renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
+        pixmap = QPixmap(18, 18)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        
+        self.btn_new.setIcon(QIcon(pixmap))
+        self.btn_new.setIconSize(QSize(18, 18))
+        
+    def refresh_colors(self):
+        self.update_icons()
+        
+        accent = theme.ACCENT_COLOR
+        
+        self.btn_new.setStyleSheet(f"""
+            QPushButton#PlusToggleButton {{
+                background-color: {accent};
+                border: none;
+                border-radius: 15px;
+            }}
+            QPushButton#PlusToggleButton:hover {{
+                background-color: {adjust_brightness(accent, 1.15)};
+            }}
+        """)
+        
+        sub_btn_style = f"""
+            QPushButton#NewActionSubButton {{
+                background-color: transparent;
+                color: {theme.TEXT_SECONDARY};
+                border: none;
+                border-radius: 6px;
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                font-weight: bold;
+            }}
+            QPushButton#NewActionSubButton:hover {{
+                background-color: {theme.HOVER_COLOR};
+                color: {accent};
+            }}
+            QPushButton#NewActionSubButton:pressed {{
+                background-color: rgba(255, 255, 255, 0.15);
+                color: {accent};
+            }}
+        """
+        self.btn_task.setStyleSheet(sub_btn_style)
+        self.btn_note.setStyleSheet(sub_btn_style)
+        self.update()
+        
+    def toggle_expand(self):
+        self.width_anim.stop()
+        
+        if not self.expanded:
+            self.btn_task.show()
+            self.btn_note.show()
+            self.width_anim.setStartValue(self.width())
+            self.width_anim.setEndValue(134)
+            self.expanded = True
+        else:
+            self.width_anim.setStartValue(self.width())
+            self.width_anim.setEndValue(38)
+            self.expanded = False
+            self.width_anim.finished.connect(self.hide_sub_buttons)
+            
+        self.width_anim.start()
+        
+    def hide_sub_buttons(self):
+        try:
+            self.width_anim.finished.disconnect(self.hide_sub_buttons)
+        except Exception:
+            pass
+        if not self.expanded:
+            self.btn_task.hide()
+            self.btn_note.hide()
+            
+    def collapse(self):
+        if self.expanded:
+            self.width_anim.stop()
+            self.width_anim.setStartValue(self.width())
+            self.width_anim.setEndValue(38)
+            self.expanded = False
+            self.width_anim.finished.connect(self.hide_sub_buttons)
+            self.width_anim.start()
+            
+    def on_task(self):
+        self.task_clicked.emit()
+        self.collapse()
+        
+    def on_note(self):
+        self.note_clicked.emit()
+        self.collapse()
+        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.btn_new.setGeometry(self.width() - 34, 4, 30, 30)
+        self.btn_task.setGeometry(4, 4, 42, 30)
+        self.btn_note.setGeometry(52, 4, 42, 30)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        
+        # Matches the static glassy background of toolbar
+        sec_color = QColor(theme.SEC_CARD_COLOR)
+        bg_color = QColor(sec_color.red(), sec_color.green(), sec_color.blue(), 152)
+        border_color = QColor(255, 255, 255, 24)
+        
+        painter.setBrush(bg_color)
+        painter.setPen(QPen(border_color, 1))
+        
+        # Capsule border radius is half of height (19px)
+        painter.drawRoundedRect(rect, 19, 19)
+
+
 class SpotifyMenuButton(QPushButton):
     def __init__(self, parent=None):
         super().__init__("", parent)
@@ -121,6 +330,86 @@ class SpotifyMenuButton(QPushButton):
         from PySide6.QtCore import QByteArray, QRectF
         renderer = QSvgRenderer(QByteArray(dots_svg.encode('utf-8')))
         renderer.render(painter, QRectF(6.0, 6.0, 16.0, 16.0))
+class CelebrationOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.particles = []
+        self.particle_timer = QTimer(self)
+        self.particle_timer.setInterval(16)
+        self.particle_timer.timeout.connect(self.update_particles)
+        
+    def spawn_particles(self, start_rect, color):
+        import math
+        import random
+        from styles.theme import RAINBOW_COLORS
+        
+        # Spawn 20 particles distributed across the card's geometry
+        for _ in range(20):
+            p_color = QColor(random.choice(RAINBOW_COLORS) if RAINBOW_COLORS else color.name())
+            
+            # Start position spread across the card's geometry
+            px = random.uniform(start_rect.x() + 10, start_rect.x() + start_rect.width() - 10)
+            py = random.uniform(start_rect.y() + 5, start_rect.y() + start_rect.height() - 5)
+            
+            # Upward/outward drift velocity
+            angle = random.uniform(-1.2 * math.pi, -0.2 * math.pi)
+            speed = random.uniform(0.6, 2.2)
+            shape = random.choice(['rect', 'ellipse'])
+            
+            self.particles.append({
+                'x': px,
+                'y': py,
+                'dx': math.cos(angle) * speed,
+                'dy': math.sin(angle) * speed,
+                'color': p_color,
+                'size': random.uniform(3.0, 6.0),
+                'alpha': 255.0,
+                'life': 1.0,
+                'shape': shape
+            })
+            
+        if not self.particle_timer.isActive():
+            self.particle_timer.start()
+            
+    def update_particles(self):
+        alive = False
+        for p in self.particles:
+            p['x'] += p['dx']
+            p['y'] += p['dy']
+            # Soft float gravity and drag
+            p['dy'] += 0.04
+            p['dx'] *= 0.98
+            p['life'] -= 0.015 # slower decay (approx 1 second lifetime)
+            if p['life'] < 0:
+                p['life'] = 0
+            p['alpha'] = p['life'] * 255.0
+            if p['life'] > 0:
+                alive = True
+                
+        if not alive:
+            self.particle_timer.stop()
+            self.particles = []
+            
+        self.update()
+        
+    def paintEvent(self, event):
+        if not self.particles:
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        for p in self.particles:
+            color = QColor(p['color'])
+            color.setAlpha(int(p['alpha']))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color)
+            if p['shape'] == 'ellipse':
+                painter.drawEllipse(QRectF(p['x'] - p['size']/2.0, p['y'] - p['size']/2.0, p['size'], p['size']))
+            else:
+                painter.drawRect(QRectF(p['x'] - p['size']/2.0, p['y'] - p['size']/2.0, p['size'], p['size']))
 
 
 class MainWindow(QWidget):
@@ -146,6 +435,8 @@ class MainWindow(QWidget):
             self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow, True)
         
         self.tasks = config.load_tasks()
+        self.notes = config.load_notes()
+        self.maximized_note_idx = -1
         self.current_page = 0
         self.input_card = None
         self.focus_card = None
@@ -163,10 +454,16 @@ class MainWindow(QWidget):
         self.inactivity_timer.timeout.connect(self.minimize_to_ball)
         self.last_cursor_pos = QCursor.pos()
         
+        # Celebration overlay for particle animations
+        self.celebration_overlay = CelebrationOverlay(self)
+        self.celebration_overlay.setGeometry(self.rect())
+        self.celebration_overlay.raise_()
+        
         self.init_ui()
         self.load_window_position()
         self.update_tasks_view()
         self.update_inactivity_timer_settings()
+        self.register_global_hotkeys()
         
         # Spotify Mini Mode Menu Button
         self.spotify_menu_btn = SpotifyMenuButton(self)
@@ -204,11 +501,9 @@ class MainWindow(QWidget):
         
         self.clock_widget = ClockWidget(self)
         
-        self.add_task_btn = AnimatedButton("New Task", self)
-        self.add_task_btn.setObjectName("HeaderAddTaskButton")
-        self.add_task_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_task_btn.clicked.connect(self.start_add_task)
-        self.add_task_btn.refresh_colors()  # Apply initial style
+        self.add_task_btn = NewButtonContainer(self)
+        self.add_task_btn.task_clicked.connect(self.start_add_task)
+        self.add_task_btn.note_clicked.connect(self.add_new_note)
         
         header_layout.addWidget(self.clock_widget)
         header_layout.addStretch()
@@ -304,21 +599,41 @@ class MainWindow(QWidget):
         self.input_card.cancelled.connect(self.on_add_task_cancelled)
         
         self.tasks_layout.insertWidget(0, self.input_card)
+        self.input_card.animate_show()
         self.input_card.input_field.setFocus()
 
     def on_task_added(self, text):
-        # Add new tasks to the top of our local tasks list
+        if self.input_card is None:
+            return
+        
         self.tasks.insert(0, text)
         config.save_tasks(self.tasks)
-        self.on_add_task_cancelled()
-        self.update_tasks_view()
+        
+        card = self.input_card
+        self.input_card = None
+        
+        def finish():
+            if card is not None:
+                self.tasks_layout.removeWidget(card)
+                card.deleteLater()
+            self.update_tasks_view()
+            
+        card.animate_hide(finish)
 
     def on_add_task_cancelled(self):
-        if self.input_card is not None:
-            self.tasks_layout.removeWidget(self.input_card)
-            self.input_card.deleteLater()
-            self.input_card = None
+        if self.input_card is None:
+            return
+            
+        card = self.input_card
+        self.input_card = None
+        
+        def finish():
+            if card is not None:
+                self.tasks_layout.removeWidget(card)
+                card.deleteLater()
             self.update_tasks_view()
+            
+        card.animate_hide(finish)
 
     def complete_task(self, text):
         if text in self.tasks:
@@ -328,52 +643,147 @@ class MainWindow(QWidget):
 
     def update_tasks_view(self):
         self.focus_card = None
-        if self.widget_state == "normal":
-            self.add_task_btn.show()
-        else:
+        
+        # If a note is maximized, we hide the header add task button
+        if self.maximized_note_idx != -1:
             self.add_task_btn.hide()
-            
-        # 1. Clear existing task card widgets from layout (keeping input_card if active)
-        widgets_to_remove = []
-        for i in range(self.tasks_layout.count()):
-            item = self.tasks_layout.itemAt(i)
-            if item and item.widget():
-                w = item.widget()
-                if w != self.input_card:
-                    widgets_to_remove.append(w)
-        for w in widgets_to_remove:
-            self.tasks_layout.removeWidget(w)
-            w.deleteLater()
-            
-        # 2. Render tasks for the current page (max 3)
-        total_tasks = len(self.tasks)
-        total_pages = max(1, (total_tasks + 2) // 3)
-        
-        # Handle page index bounds
-        if self.current_page >= total_pages:
-            self.current_page = max(0, total_pages - 1)
-            
-        start_idx = self.current_page * 3
-        end_idx = start_idx + 3
-        page_tasks = self.tasks[start_idx:end_idx]
-        
-        for idx, text in enumerate(page_tasks):
-            global_idx = start_idx + idx
-            from styles.theme import RAINBOW_COLORS
-            color_hex = RAINBOW_COLORS[global_idx % len(RAINBOW_COLORS)]
-            card = TaskCard(text, color_hex, self)
-            card.completed.connect(lambda t=text: self.complete_task(t))
-            card.focus_toggled.connect(lambda active, c=card: self.handle_task_focus_toggle(c, active))
-            if self.widget_state != "normal":
-                card.hide()
-            # If input_card is currently active, insert it below the input card, else add to end
-            if self.input_card is not None:
-                self.tasks_layout.insertWidget(self.tasks_layout.count(), card)
+            self.pagination_widget.hide()
+        else:
+            if self.widget_state == "normal":
+                self.add_task_btn.show()
             else:
-                self.tasks_layout.addWidget(card)
+                self.add_task_btn.hide()
+            
+        # 1. Clear existing task card widgets and nested layouts from tasks_layout (keeping input_card)
+        i = 0
+        while i < self.tasks_layout.count():
+            item = self.tasks_layout.itemAt(i)
+            if item.widget() == self.input_card and self.input_card is not None:
+                i += 1
+                continue
                 
+            item = self.tasks_layout.takeAt(i)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                lay = item.layout()
+                while lay.count() > 0:
+                    child_item = lay.takeAt(0)
+                    if child_item.widget():
+                        child_item.widget().deleteLater()
+                lay.deleteLater()
+
+        # Check if a note is maximized
+        if self.maximized_note_idx != -1:
+            note_text = self.notes[self.maximized_note_idx]
+            from styles.theme import RAINBOW_COLORS
+            color_hex = RAINBOW_COLORS[self.maximized_note_idx % len(RAINBOW_COLORS)]
+            
+            editor = MaximizedNoteWidget(self.maximized_note_idx, note_text, color_hex, self)
+            editor.back_clicked.connect(self.save_and_close_note)
+            self.tasks_layout.addWidget(editor)
+            editor.animate_show()
+            editor.show_fade.finished.connect(self.unlock_window_height)
+            self.adjustSize()
+            return
+
+        total_tasks = len(self.tasks)
+
+        # 2. Render tasks and notes
+        if len(self.notes) > 0:
+            # Hybrid Layout: 1 task card at the top, 2 side-by-side squares at the bottom
+            total_pages = max(1, total_tasks, (len(self.notes) + 1) // 2)
+            if self.current_page >= total_pages:
+                self.current_page = max(0, total_pages - 1)
+                
+            # Render top task (if any exists on this page)
+            if self.current_page < len(self.tasks):
+                text = self.tasks[self.current_page]
+                from styles.theme import RAINBOW_COLORS
+                color_hex = RAINBOW_COLORS[self.current_page % len(RAINBOW_COLORS)]
+                card = TaskCard(text, color_hex, self)
+                card.completed.connect(lambda t=text: self.complete_task(t))
+                card.focus_toggled.connect(lambda active, c=card: self.handle_task_focus_toggle(c, active))
+                if self.widget_state != "normal":
+                    card.hide()
+                    
+                if self.input_card is not None:
+                    self.tasks_layout.insertWidget(self.tasks_layout.count(), card)
+                else:
+                    self.tasks_layout.addWidget(card)
+                    
+            # Render bottom squares (Notes) for the current page
+            squares_layout = QHBoxLayout()
+            squares_layout.setContentsMargins(0, 6, 0, 0)
+            squares_layout.setSpacing(6)
+            
+            from styles.theme import RAINBOW_COLORS
+            start_note_idx = self.current_page * 2
+            page_notes = self.notes[start_note_idx : start_note_idx + 2]
+            
+            # Note Square 1
+            if len(page_notes) >= 1:
+                note_idx = start_note_idx + 0
+                color_hex = RAINBOW_COLORS[note_idx % len(RAINBOW_COLORS)]
+                sq1 = NoteSquareWidget(note_idx, page_notes[0], color_hex, self)
+                sq1.clicked.connect(self.maximize_note)
+                if self.widget_state != "normal":
+                    sq1.hide()
+                squares_layout.addWidget(sq1)
+            else:
+                # Blank spacer widget
+                dummy1 = QWidget(self)
+                dummy1.setFixedSize(157, 90)
+                dummy1.setStyleSheet("background: transparent; border: none;")
+                squares_layout.addWidget(dummy1)
+                
+            # Note Square 2
+            if len(page_notes) >= 2:
+                note_idx = start_note_idx + 1
+                color_hex = RAINBOW_COLORS[note_idx % len(RAINBOW_COLORS)]
+                sq2 = NoteSquareWidget(note_idx, page_notes[1], color_hex, self)
+                sq2.clicked.connect(self.maximize_note)
+                if self.widget_state != "normal":
+                    sq2.hide()
+                squares_layout.addWidget(sq2)
+            else:
+                # Blank spacer widget
+                dummy2 = QWidget(self)
+                dummy2.setFixedSize(157, 90)
+                dummy2.setStyleSheet("background: transparent; border: none;")
+                squares_layout.addWidget(dummy2)
+                
+            self.tasks_layout.addLayout(squares_layout)
+        else:
+            # Standard Layout: Up to 3 task cards vertically
+            total_pages = max(1, (total_tasks + 2) // 3)
+            if self.current_page >= total_pages:
+                self.current_page = max(0, total_pages - 1)
+                
+            start_idx = self.current_page * 3
+            end_idx = start_idx + 3
+            page_tasks = self.tasks[start_idx:end_idx]
+            
+            for idx, text in enumerate(page_tasks):
+                global_idx = start_idx + idx
+                from styles.theme import RAINBOW_COLORS
+                color_hex = RAINBOW_COLORS[global_idx % len(RAINBOW_COLORS)]
+                card = TaskCard(text, color_hex, self)
+                card.completed.connect(lambda t=text: self.complete_task(t))
+                card.focus_toggled.connect(lambda active, c=card: self.handle_task_focus_toggle(c, active))
+                if self.widget_state != "normal":
+                    card.hide()
+                if self.input_card is not None:
+                    self.tasks_layout.insertWidget(self.tasks_layout.count(), card)
+                else:
+                    self.tasks_layout.addWidget(card)
+                    
         # 3. Update pagination visibility and text
-        if total_tasks > 3 and self.widget_state == "normal":
+        show_pagination = False
+        if self.widget_state == "normal":
+            show_pagination = total_pages > 1
+                
+        if show_pagination:
             self.pagination_widget.show()
             self.page_label.setText(f"{self.current_page + 1} / {total_pages}")
             self.prev_btn.setEnabled(self.current_page > 0)
@@ -381,7 +791,7 @@ class MainWindow(QWidget):
         else:
             self.pagination_widget.hide()
             
-        # 4. Trigger height adjust updates on next event loop tick
+        # 4. Trigger height adjust updates
         self.adjustSize()
 
     def handle_task_focus_toggle(self, card, start_focus):
@@ -410,16 +820,168 @@ class MainWindow(QWidget):
             self.focus_card = None
             card.checkbox.setChecked(True)
 
+    def on_pomodoro_finished(self):
+        print("Pomodoro timer finished!", file=sys.stderr)
+        sys.stderr.flush()
+        try:
+            import winsound
+            winsound.MessageBeep()
+        except Exception:
+            pass
+
     def prev_page(self):
         if self.current_page > 0:
             self.current_page -= 1
             self.update_tasks_view()
 
     def next_page(self):
-        total_pages = max(1, (len(self.tasks) + 2) // 3)
+        total_tasks = len(self.tasks)
+        if len(self.notes) > 0:
+            total_pages = max(1, total_tasks, (len(self.notes) + 1) // 2)
+        else:
+            total_pages = max(1, (total_tasks + 2) // 3)
+            
         if self.current_page < total_pages - 1:
             self.current_page += 1
             self.update_tasks_view()
+
+    def maximize_note(self, index):
+        self.setFixedHeight(self.height())
+        def on_fade_done():
+            self.maximized_note_idx = index
+            self.update_tasks_view()
+        self.fade_out_layout_widgets(on_fade_done)
+        
+    def add_new_note(self):
+        self.setFixedHeight(self.height())
+        self.notes.append("New Note")
+        config.save_notes(self.notes)
+        
+        def on_fade_done():
+            self.maximized_note_idx = len(self.notes) - 1
+            self.current_page = self.maximized_note_idx // 2
+            self.update_tasks_view()
+        self.fade_out_layout_widgets(on_fade_done)
+        
+    def save_and_close_note(self, index, new_text):
+        if len(new_text.strip()) == 0:
+            # Delete note if cleared
+            self.notes.pop(index)
+        else:
+            self.notes[index] = new_text
+        config.save_notes(self.notes)
+        self.maximized_note_idx = -1
+        
+        # Adjust page index if the last page became empty
+        if len(self.notes) > 0:
+            max_page = (len(self.notes) - 1) // 2
+            self.current_page = min(self.current_page, max_page)
+        else:
+            self.current_page = 0
+            
+        self.setFixedHeight(self.height())
+        self.update_tasks_view()
+        self.fade_in_layout_widgets()
+
+    def unlock_window_height(self):
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        self.adjustSize()
+
+    def fade_out_layout_widgets(self, callback):
+        widgets = []
+        for i in range(self.tasks_layout.count()):
+            item = self.tasks_layout.itemAt(i)
+            if item.widget() and item.widget() != self.input_card:
+                widgets.append(item.widget())
+            elif item.layout():
+                lay = item.layout()
+                for j in range(lay.count()):
+                    child_item = lay.itemAt(j)
+                    if child_item.widget():
+                        widgets.append(child_item.widget())
+                        
+        if not widgets:
+            callback()
+            return
+            
+        self._transition_anims = []
+        self._transition_effects = []
+        
+        finished_count = [0]
+        def on_finished():
+            finished_count[0] += 1
+            if finished_count[0] == len(widgets):
+                for w, eff in zip(widgets, self._transition_effects):
+                    try:
+                        w.setGraphicsEffect(None)
+                    except Exception:
+                        pass
+                self._transition_anims.clear()
+                self._transition_effects.clear()
+                callback()
+                
+        for w in widgets:
+            eff = QGraphicsOpacityEffect(w)
+            w.setGraphicsEffect(eff)
+            self._transition_effects.append(eff)
+            
+            anim = QPropertyAnimation(eff, b"opacity", w)
+            anim.setDuration(120)
+            anim.setStartValue(1.0)
+            anim.setEndValue(0.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            anim.finished.connect(on_finished)
+            self._transition_anims.append(anim)
+            anim.start()
+
+    def fade_in_layout_widgets(self):
+        widgets = []
+        for i in range(self.tasks_layout.count()):
+            item = self.tasks_layout.itemAt(i)
+            if item.widget() and item.widget() != self.input_card:
+                widgets.append(item.widget())
+            elif item.layout():
+                lay = item.layout()
+                for j in range(lay.count()):
+                    child_item = lay.itemAt(j)
+                    if child_item.widget():
+                        widgets.append(child_item.widget())
+                        
+        if not widgets:
+            self.unlock_window_height()
+            return
+            
+        self._transition_anims = []
+        self._transition_effects = []
+        
+        finished_count = [0]
+        def on_finished():
+            finished_count[0] += 1
+            if finished_count[0] == len(widgets):
+                for w, eff in zip(widgets, self._transition_effects):
+                    try:
+                        w.setGraphicsEffect(None)
+                    except Exception:
+                        pass
+                self._transition_anims.clear()
+                self._transition_effects.clear()
+                self.unlock_window_height()
+                
+        for w in widgets:
+            eff = QGraphicsOpacityEffect(w)
+            eff.setOpacity(0.0)
+            w.setGraphicsEffect(eff)
+            self._transition_effects.append(eff)
+            
+            anim = QPropertyAnimation(eff, b"opacity", w)
+            anim.setDuration(150)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            anim.finished.connect(on_finished)
+            self._transition_anims.append(anim)
+            anim.start()
 
     def update_inactivity_timer_settings(self):
         enabled = config.load_minimize_on_idle()
@@ -437,6 +999,16 @@ class MainWindow(QWidget):
         sys.stderr.flush()
 
     def minimize_to_ball(self):
+        # Prevent automatic idle minimize if a task is active or timer/stopwatch is running
+        if self.sender() == self.inactivity_timer:
+            has_active_task = self.focus_card is not None
+            has_running_timer = hasattr(self, 'toolbar') and self.toolbar and self.toolbar.is_timer_running
+            if has_active_task or has_running_timer:
+                print("Task or Timer is active, skipping auto-minimize to ball.", file=sys.stderr)
+                sys.stderr.flush()
+                self.inactivity_timer.start()
+                return
+
         print("Inactivity timeout reached! Minimizing to ball.", file=sys.stderr)
         sys.stderr.flush()
         self.inactivity_timer.stop()
@@ -649,7 +1221,14 @@ class MainWindow(QWidget):
                         
         return super().eventFilter(obj, event)
 
+    def resizeEvent(self, event):
+        if hasattr(self, 'celebration_overlay') and self.celebration_overlay:
+            self.celebration_overlay.setGeometry(self.rect())
+            self.celebration_overlay.raise_()
+        super().resizeEvent(event)
+
     def closeEvent(self, event):
+        self.unregister_global_hotkeys()
         # When closing the window, hide it instead of quitting (system tray stays active)
         event.ignore()
         self.hide()
@@ -792,14 +1371,28 @@ class MainWindow(QWidget):
         if hasattr(self, 'ai_panel') and self.ai_panel:
             self.ai_panel.refresh_styles()
         
-        # Re-apply styles of currently visible task cards
+        # Helper to refresh widget style if applicable
+        def refresh_widget_theme(w):
+            if hasattr(w, 'update_text_style'):
+                w.setStyleSheet(qss.get_task_card_style())
+                w.update_text_style()
+            elif hasattr(w, 'update_style'):
+                w.update_style()
+                if hasattr(w, 'update_icons'):
+                    w.update_icons()
+
+        # Re-apply styles of currently visible widgets and sub-layouts
         for i in range(self.tasks_layout.count()):
             item = self.tasks_layout.itemAt(i)
-            if item and item.widget():
-                w = item.widget()
-                if hasattr(w, 'update_text_style'):
-                    w.setStyleSheet(qss.get_task_card_style())
-                    w.update_text_style()
+            if item:
+                if item.widget():
+                    refresh_widget_theme(item.widget())
+                elif item.layout():
+                    lay = item.layout()
+                    for j in range(lay.count()):
+                        child_item = lay.itemAt(j)
+                        if child_item and child_item.widget():
+                            refresh_widget_theme(child_item.widget())
                     
         # Trigger clock time update to format clock immediately
         self.clock_widget.update_time()
@@ -849,3 +1442,88 @@ class MainWindow(QWidget):
                 self.spotify_panel.toggle()
             # Expand/collapse AI panel height
             self.ai_panel.toggle()
+
+    def register_global_hotkeys(self):
+        self.unregister_global_hotkeys()
+        
+        self.registered_hotkeys = {}
+        import sys
+        if sys.platform != 'win32':
+            return
+            
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = int(self.winId())
+        
+        # Load custom shortcuts from config
+        from utils import config
+        self.shortcuts = config.load_shortcuts()
+        
+        # 1. Toggle Window Shortcut
+        t_mods, t_vk = parse_shortcut_string(self.shortcuts.get("toggle_window", "Alt+T"))
+        if t_vk:
+            if user32.RegisterHotKey(hwnd, 1, t_mods, t_vk):
+                self.registered_hotkeys[1] = "toggle_window"
+                
+        # 2. New Task Shortcut
+        n_mods, n_vk = parse_shortcut_string(self.shortcuts.get("new_task", "Alt+Q"))
+        if n_vk:
+            if user32.RegisterHotKey(hwnd, 2, n_mods, n_vk):
+                self.registered_hotkeys[2] = "new_task"
+
+    def unregister_global_hotkeys(self):
+        import sys
+        if sys.platform != 'win32':
+            return
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = int(self.winId())
+        if hasattr(self, 'registered_hotkeys'):
+            for hid in list(self.registered_hotkeys.keys()):
+                user32.UnregisterHotKey(hwnd, hid)
+            self.registered_hotkeys = {}
+
+    def handle_global_hotkey(self, action):
+        if action == "toggle_window":
+            if self.widget_state == "minimized_ball":
+                self.restore_from_ball()
+                self.activateWindow()
+            else:
+                if self.isVisible() and self.isActiveWindow():
+                    self.minimize_to_ball()
+                else:
+                    self.show()
+                    self.restore_from_ball()
+                    self.activateWindow()
+        elif action == "new_task":
+            if self.widget_state == "minimized_ball":
+                self.restore_from_ball()
+            self.show()
+            self.restore_from_ball() # Ensure fully restored
+            self.activateWindow()
+            self.start_add_task()
+
+    def nativeEvent(self, eventType, message):
+        import sys
+        if sys.platform == 'win32' and eventType == b"windows_generic_MSG":
+            import ctypes
+            from ctypes import wintypes
+            
+            class MSG(ctypes.Structure):
+                _fields_ = [
+                    ("hwnd", wintypes.HWND),
+                    ("message", wintypes.UINT),
+                    ("wParam", wintypes.WPARAM),
+                    ("lParam", wintypes.LPARAM),
+                    ("time", wintypes.DWORD),
+                    ("pt", wintypes.POINT),
+                ]
+                
+            msg = MSG.from_address(int(message))
+            if msg.message == 0x0312: # WM_HOTKEY
+                hotkey_id = msg.wParam
+                if hasattr(self, 'registered_hotkeys') and hotkey_id in self.registered_hotkeys:
+                    action = self.registered_hotkeys[hotkey_id]
+                    self.handle_global_hotkey(action)
+                    return True, 0
+        return super().nativeEvent(eventType, message)

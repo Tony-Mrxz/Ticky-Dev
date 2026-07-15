@@ -1,7 +1,7 @@
 # widgets/task_card.py
 """Interactive custom task card component with micro-animations."""
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QTimer, QByteArray, QRectF
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QTimer, QByteArray, QRectF, QPoint
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QGraphicsOpacityEffect, QLineEdit, QPushButton
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 import random
@@ -350,35 +350,41 @@ class TaskCard(QWidget):
     def on_checkbox_toggle(self, checked):
         self.update_text_style()
         if checked:
-            QTimer.singleShot(400, self.animate_completion)
+            # Map coordinates to MainWindow to draw particles outside clipping bounds
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'celebration_overlay') and main_window.celebration_overlay:
+                pos = self.mapTo(main_window, QPoint(0, 0))
+                card_rect = QRectF(pos.x(), pos.y(), self.width(), self.height())
+                main_window.celebration_overlay.spawn_particles(card_rect, self.color)
+            QTimer.singleShot(800, self.animate_completion)
 
     def animate_completion(self):
         # 1. Opacity fade out
-        fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity", self)
-        fade_anim.setDuration(150)
-        fade_anim.setStartValue(1.0)
-        fade_anim.setEndValue(0.0)
-        fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+        self.fade_anim.setDuration(150)
+        self.fade_anim.setStartValue(1.0)
+        self.fade_anim.setEndValue(0.0)
+        self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
         
         # 2. Height collapse
-        height_anim = QPropertyAnimation(self, b"minimumHeight", self)
-        height_anim.setDuration(180)
-        height_anim.setStartValue(self._max_height)
-        height_anim.setEndValue(0)
-        height_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.height_anim = QPropertyAnimation(self, b"minimumHeight", self)
+        self.height_anim.setDuration(180)
+        self.height_anim.setStartValue(self._max_height)
+        self.height_anim.setEndValue(0)
+        self.height_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
         
-        height_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
-        height_anim2.setDuration(180)
-        height_anim2.setStartValue(self._max_height)
-        height_anim2.setEndValue(0)
-        height_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.height_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
+        self.height_anim2.setDuration(180)
+        self.height_anim2.setStartValue(self._max_height)
+        self.height_anim2.setEndValue(0)
+        self.height_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
         
-        fade_anim.start()
-        height_anim.start()
-        height_anim2.start()
+        self.fade_anim.start()
+        self.height_anim.start()
+        self.height_anim2.start()
         
         # Emit completed signal when collapse finished
-        height_anim.finished.connect(self.completed.emit)
+        self.height_anim.finished.connect(self.completed.emit)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -455,6 +461,8 @@ class TaskCard(QWidget):
                 painter.drawPath(path)
 
 
+
+
 class TaskInputFieldCard(QWidget):
     task_added = Signal(str)
     cancelled = Signal()
@@ -509,3 +517,38 @@ class TaskInputFieldCard(QWidget):
             self.task_added.emit(text)
         else:
             self.cancelled.emit()
+
+    def animate_show(self):
+        self.setFixedHeight(0)
+        self.show_anim = QPropertyAnimation(self, b"minimumHeight", self)
+        self.show_anim.setDuration(180)
+        self.show_anim.setStartValue(0)
+        self.show_anim.setEndValue(42)
+        self.show_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        self.show_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
+        self.show_anim2.setDuration(180)
+        self.show_anim2.setStartValue(0)
+        self.show_anim2.setEndValue(42)
+        self.show_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        self.show_anim.start()
+        self.show_anim2.start()
+        
+    def animate_hide(self, callback):
+        self.hide_anim = QPropertyAnimation(self, b"minimumHeight", self)
+        self.hide_anim.setDuration(150)
+        self.hide_anim.setStartValue(42)
+        self.hide_anim.setEndValue(0)
+        self.hide_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        self.hide_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
+        self.hide_anim2.setDuration(150)
+        self.hide_anim2.setStartValue(42)
+        self.hide_anim2.setEndValue(0)
+        self.hide_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        self.hide_anim.finished.connect(callback)
+        
+        self.hide_anim.start()
+        self.hide_anim2.start()

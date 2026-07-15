@@ -232,3 +232,28 @@ def load_ai_model(default_value="gemini-1.5-flash"):
 def save_ai_model(value):
     """Save selected AI Model."""
     save_config({"ai_model": value})
+
+def load_shortcuts(default_shortcuts=None):
+    """Load keyboard shortcuts mapping. Default includes Alt+T and Alt+Q."""
+    if default_shortcuts is None:
+        default_shortcuts = {
+            "toggle_window": "Alt+T",
+            "new_task": "Alt+Q"
+        }
+    data = load_config()
+    saved = data.get("shortcuts", {})
+    merged = default_shortcuts.copy()
+    merged.update(saved)
+    return merged
+
+def save_shortcuts(shortcuts):
+    """Save keyboard shortcuts mapping."""
+    save_config({"shortcuts": shortcuts})
+
+def load_notes():
+    """Load the list of active notes/notepads."""
+    return load_config().get("notes", [])
+
+def save_notes(notes_list):
+    """Save the list of active notes/notepads."""
+    save_config({"notes": notes_list})

@@ -150,15 +150,19 @@ def get_toolbar_style():
             max-width: 36px;
             max-height: 36px;
         }}
-        QLabel#StopwatchLabel {{
+        QLineEdit#StopwatchLabel, QLabel#StopwatchLabel {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
             font-size: 12px;
             font-weight: bold;
             background-color: transparent;
             border: none;
-            min-width: 54px;
-            max-width: 54px;
+            padding: 0px;
+            margin: 0px;
+            min-width: 60px;
+            max-width: 60px;
+            selection-background-color: {theme.ACCENT_COLOR};
+            selection-color: #FFFFFF;
         }}
     """
 

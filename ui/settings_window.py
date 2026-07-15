@@ -1,9 +1,9 @@
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent, QTimer
 from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, 
                                QLabel, QPushButton, QGraphicsDropShadowEffect, 
                                QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea,
                                QGraphicsOpacityEffect, QComboBox)
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QKeySequence
 from styles import theme, qss
 from utils import config
 
@@ -273,6 +273,48 @@ class ClockStyleCard(QFrame):
         self.update()
 
 
+class ShortcutLineEdit(QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Press key combination...")
+        self.setReadOnly(True)
+        self.setObjectName("SpotifyInput")
+        
+    def keyPressEvent(self, event):
+        key = event.key()
+        modifiers = event.modifiers()
+        
+        # Backspace or Delete to clear/disable the shortcut
+        if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            self.setText("None")
+            event.accept()
+            return
+            
+        # Ignore modifier-only key presses
+        if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
+            super().keyPressEvent(event)
+            return
+            
+        parts = []
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            parts.append("Ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            parts.append("Alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            parts.append("Shift")
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            parts.append("Win")
+            
+        key_str = QKeySequence(key).toString()
+        if key_str:
+            parts.append(key_str)
+            shortcut_text = "+".join(parts)
+            self.setText(shortcut_text)
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+
 class SettingsWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(None) # Standalone window
@@ -330,7 +372,8 @@ class SettingsWindow(QWidget):
             ("Clock", 2),
             ("Appearance", 3),
             ("Spotify", 4),
-            ("AI Chat", 5)
+            ("AI Chat", 5),
+            ("Shortcuts", 6)
         ]
         
         for name, idx in sidebar_items:
@@ -973,13 +1016,13 @@ class SettingsWindow(QWidget):
             "<b>Setup Instructions:</b><br>"
             "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#FF9F0A;'>developer.spotify.com/dashboard</a> and log in.<br>"
             "2. Click <b>Create App</b>.<br>"
-            "3. Add Redirect URI: <code style='color:#FFD60A;'>http://127.0.0.1:8888/callback</code><br>"
+            "3. Add Redirect URI: <a href='copy' style='color:#FFD60A; text-decoration:underline;'>http://127.0.0.1:8888/callback</a> (Click to copy)<br>"
             "4. Paste the Client ID & Secret below.<br>"
             "<span style='color:#FF453A; font-weight:bold;'>⚠️ Spotify Policy Note:</span> Playback controls (play, pause, skip) require a <b>Spotify Premium</b> account. Free accounts can only fetch currently playing details.", 
             status_section
         )
         self.lbl_spotify_guide.setObjectName("SettingDescription")
-        self.lbl_spotify_guide.setOpenExternalLinks(True)
+        self.lbl_spotify_guide.setOpenExternalLinks(False)
         self.lbl_spotify_guide.setWordWrap(True)
         self.lbl_spotify_guide.setStyleSheet(f"""
             QLabel#SettingDescription {{
@@ -989,6 +1032,22 @@ class SettingsWindow(QWidget):
                 font-size: 9px;
             }}
         """)
+        
+        def handle_guide_link(url_str):
+            if url_str == "copy":
+                from PySide6.QtWidgets import QApplication
+                clipboard = QApplication.clipboard()
+                if clipboard:
+                    clipboard.setText("http://127.0.0.1:8888/callback")
+                    orig_text = self.lbl_spotify_guide.text()
+                    feedback_text = orig_text.replace("http://127.0.0.1:8888/callback", "Copied to clipboard!")
+                    self.lbl_spotify_guide.setText(feedback_text)
+                    QTimer.singleShot(1500, lambda: self.lbl_spotify_guide.setText(orig_text))
+            else:
+                import webbrowser
+                webbrowser.open(url_str)
+                
+        self.lbl_spotify_guide.linkActivated.connect(handle_guide_link)
         status_inner.addWidget(self.lbl_spotify_guide)
         
         creds_section = QFrame(spot_content)
@@ -1181,6 +1240,105 @@ class SettingsWindow(QWidget):
         
         self.stacked_widget.addWidget(page_ai)
         
+        # --- Page 7: Shortcuts Settings ---
+        page_shortcuts = QWidget()
+        page_shortcuts_layout = QVBoxLayout(page_shortcuts)
+        page_shortcuts_layout.setContentsMargins(0, 0, 0, 0)
+        page_shortcuts_layout.setSpacing(10)
+        
+        shortcut_scroll = QScrollArea(page_shortcuts)
+        shortcut_scroll.setObjectName("ShortcutsSettingsScroll")
+        shortcut_scroll.setWidgetResizable(True)
+        shortcut_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        shortcut_content = QWidget()
+        shortcut_content.setObjectName("ShortcutsScrollContent")
+        shortcut_content_layout = QVBoxLayout(shortcut_content)
+        shortcut_content_layout.setContentsMargins(0, 0, 4, 0)
+        shortcut_content_layout.setSpacing(12)
+        
+        # Guide section
+        shortcuts_guide_section = QFrame(shortcut_content)
+        shortcuts_guide_section.setObjectName("SettingSection")
+        shortcuts_guide_inner = QVBoxLayout(shortcuts_guide_section)
+        shortcuts_guide_inner.setContentsMargins(12, 10, 12, 10)
+        
+        lbl_shortcuts_guide_title = QLabel("Keyboard Shortcuts", shortcuts_guide_section)
+        lbl_shortcuts_guide_title.setObjectName("SettingLabel")
+        lbl_shortcuts_guide_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        
+        lbl_shortcuts_guide_desc = QLabel(
+            "Configure global hotkeys to control Ticky from anywhere on your system.<br>"
+            "Click on an input box and press your key combination (e.g. <b>Alt+T</b>).<br>"
+            "Press <b>Backspace</b> or <b>Delete</b> to clear a shortcut.",
+            shortcuts_guide_section
+        )
+        lbl_shortcuts_guide_desc.setObjectName("SettingDescription")
+        lbl_shortcuts_guide_desc.setWordWrap(True)
+        lbl_shortcuts_guide_desc.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 9px; line-height: 1.3;")
+        
+        shortcuts_guide_inner.addWidget(lbl_shortcuts_guide_title)
+        shortcuts_guide_inner.addWidget(lbl_shortcuts_guide_desc)
+        
+        # Inputs Section
+        inputs_section = QFrame(shortcut_content)
+        inputs_section.setObjectName("SettingSection")
+        inputs_inner = QVBoxLayout(inputs_section)
+        inputs_inner.setContentsMargins(12, 10, 12, 10)
+        inputs_inner.setSpacing(8)
+        
+        # 1. Toggle Window Shortcut Row
+        row1 = QHBoxLayout()
+        lbl_toggle = QLabel("Toggle Window:", inputs_section)
+        lbl_toggle.setObjectName("SettingLabel")
+        lbl_toggle.setStyleSheet("font-weight: bold; font-size: 11px;")
+        
+        self.input_toggle_shortcut = ShortcutLineEdit(inputs_section)
+        self.input_toggle_shortcut.setFixedWidth(180)
+        row1.addWidget(lbl_toggle)
+        row1.addWidget(self.input_toggle_shortcut, 0, Qt.AlignmentFlag.AlignRight)
+        inputs_inner.addLayout(row1)
+        
+        # Spacer Line
+        sep_sc = QFrame(inputs_section)
+        sep_sc.setObjectName("SettingRowDivider")
+        sep_sc.setFixedHeight(1)
+        inputs_inner.addWidget(sep_sc)
+        
+        # 2. New Task Shortcut Row
+        row2 = QHBoxLayout()
+        lbl_new_task = QLabel("Create New Task:", inputs_section)
+        lbl_new_task.setObjectName("SettingLabel")
+        lbl_new_task.setStyleSheet("font-weight: bold; font-size: 11px;")
+        
+        self.input_new_task_shortcut = ShortcutLineEdit(inputs_section)
+        self.input_new_task_shortcut.setFixedWidth(180)
+        row2.addWidget(lbl_new_task)
+        row2.addWidget(self.input_new_task_shortcut, 0, Qt.AlignmentFlag.AlignRight)
+        inputs_inner.addLayout(row2)
+        
+        # Load values
+        saved_shortcuts = config.load_shortcuts()
+        self.input_toggle_shortcut.setText(saved_shortcuts.get("toggle_window", "Alt+T"))
+        self.input_new_task_shortcut.setText(saved_shortcuts.get("new_task", "Alt+Q"))
+        
+        shortcut_content_layout.addWidget(shortcuts_guide_section)
+        shortcut_content_layout.addWidget(inputs_section)
+        shortcut_content_layout.addStretch()
+        
+        shortcut_scroll.setWidget(shortcut_content)
+        page_shortcuts_layout.addWidget(shortcut_scroll)
+        
+        sc_btn_layout = QHBoxLayout()
+        self.btn_save_shortcuts = QPushButton("Save Shortcuts", page_shortcuts)
+        self.btn_save_shortcuts.setStyleSheet(self.get_action_button_style())
+        self.btn_save_shortcuts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save_shortcuts.clicked.connect(self.save_shortcut_settings)
+        sc_btn_layout.addWidget(self.btn_save_shortcuts)
+        page_shortcuts_layout.addLayout(sc_btn_layout)
+        
+        self.stacked_widget.addWidget(page_shortcuts)
+        
         # Initialize dynamic welcome guide
         self.on_ai_provider_changed(self.combo_provider.currentText())
         
@@ -1224,8 +1382,17 @@ class SettingsWindow(QWidget):
         self.opacity_effect.setEnabled(False)
         self.stacked_widget.setCurrentIndex(index)
         
+        # Temporarily disable global hotkeys when entering the shortcuts page to prevent actions triggering
+        if self.parent_window:
+            if index == 6:
+                if hasattr(self.parent_window, 'unregister_global_hotkeys'):
+                    self.parent_window.unregister_global_hotkeys()
+            else:
+                if hasattr(self.parent_window, 'register_global_hotkeys'):
+                    self.parent_window.register_global_hotkeys()
+        
         # Update page header title
-        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Appearance", "Spotify Integration", "AI Integration"]
+        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Appearance", "Spotify Integration", "AI Integration", "Keyboard Shortcuts"]
         self.lbl_page_title.setText(titles[index])
         
         # Update sidebar buttons style
@@ -1314,7 +1481,8 @@ class SettingsWindow(QWidget):
         style = self.get_action_button_style()
         for btn in (
             self.btn_save_general, self.btn_save_fonts, self.btn_save_clock,
-            self.btn_save_spotify, self.btn_connect_spotify, self.btn_save_ai
+            self.btn_save_spotify, self.btn_connect_spotify, self.btn_save_ai,
+            self.btn_save_shortcuts
         ):
             btn.setStyleSheet(style)
 
@@ -1523,6 +1691,23 @@ class SettingsWindow(QWidget):
         if self.parent_window and hasattr(self.parent_window, "ai_panel") and self.parent_window.ai_panel:
             self.parent_window.ai_panel.update_welcome_text()
 
+    def save_shortcut_settings(self):
+        t_sc = self.input_toggle_shortcut.text().strip()
+        n_sc = self.input_new_task_shortcut.text().strip()
+        
+        config.save_shortcuts({
+            "toggle_window": t_sc if t_sc and t_sc != "None" else "",
+            "new_task": n_sc if n_sc and n_sc != "None" else ""
+        })
+        
+        if self.parent_window and hasattr(self.parent_window, 'register_global_hotkeys'):
+            self.parent_window.shortcuts = config.load_shortcuts()
+            self.parent_window.register_global_hotkeys()
+            
+        self.btn_save_shortcuts.setText("Saved!")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: self.btn_save_shortcuts.setText("Save Shortcuts"))
+
     def on_ai_provider_changed(self, provider_name):
         provider_instructions = {
             "Gemini": (
@@ -1690,6 +1875,8 @@ class SettingsWindow(QWidget):
             self.parent_window.refresh_theme()
 
     def closeEvent(self, event):
+        if self.parent_window and hasattr(self.parent_window, 'register_global_hotkeys'):
+            self.parent_window.register_global_hotkeys()
         if self.parent_window and hasattr(self.parent_window, 'toolbar'):
             self.parent_window.toolbar.btn_settings.setActive(False)
         super().closeEvent(event)
