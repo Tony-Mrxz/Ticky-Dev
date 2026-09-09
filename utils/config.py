@@ -112,6 +112,14 @@ def save_spotify_demo_mode(value):
     """Save whether Spotify demo mode is enabled."""
     save_config({"spotify_demo_mode": value})
 
+def load_spotify_backend_mode(default_value="gsmtc"):
+    """Load Spotify backend mode ('gsmtc' or 'api')."""
+    return load_config().get("spotify_backend_mode", default_value)
+
+def save_spotify_backend_mode(value):
+    """Save Spotify backend mode ('gsmtc' or 'api')."""
+    save_config({"spotify_backend_mode": value})
+
 def load_theme(default_value="Obsidian"):
     """Load the selected UI color theme name."""
     return load_config().get("ui_theme", default_value)

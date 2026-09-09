@@ -22,6 +22,10 @@ lock_file = None
 
 def main():
     global lock_file
+    import os
+    # Ensure working directory is set to application folder when launched by Windows Registry on boot
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
     # Enforce single instance application lock
     from PySide6.QtCore import QLockFile, QDir
     lock_file = QLockFile(QDir.temp().absoluteFilePath("ticky_application.lock"))

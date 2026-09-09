@@ -989,7 +989,50 @@ class SettingsWindow(QWidget):
         status_inner.setContentsMargins(12, 10, 12, 10)
         status_inner.setSpacing(8)
         
-        self.lbl_spot_status = QLabel("⚠️ Please link your Spotify account below.", status_section)
+        # 1. Integration Mode Row
+        mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 4, 0, 4)
+        mode_text_col = QVBoxLayout()
+        mode_text_col.setSpacing(2)
+        lbl_mode = QLabel("Integration Mode", status_section)
+        lbl_mode.setObjectName("SettingLabel")
+        lbl_mode_desc = QLabel("Select media control backend source", status_section)
+        lbl_mode_desc.setObjectName("SettingDescription")
+        mode_text_col.addWidget(lbl_mode)
+        mode_text_col.addWidget(lbl_mode_desc)
+        
+        self.combo_spot_mode = QComboBox(status_section)
+        self.combo_spot_mode.addItems(["Automatic (Windows Media)", "Spotify Developer API (Advanced)"])
+        self.combo_spot_mode.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(0, 0, 0, 60);
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                padding: 4px 8px;
+                min-width: 170px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+        """)
+        current_mode = config.load_spotify_backend_mode("gsmtc")
+        self.combo_spot_mode.setCurrentIndex(0 if current_mode == "gsmtc" else 1)
+        self.combo_spot_mode.currentIndexChanged.connect(self.on_spot_mode_changed)
+        
+        mode_row.addLayout(mode_text_col, 1)
+        mode_row.addWidget(self.combo_spot_mode, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        status_inner.addWidget(self.combo_spot_mode)
+        status_inner.addLayout(mode_row)
+        
+        sep_spot = QFrame(status_section)
+        sep_spot.setObjectName("SettingRowDivider")
+        sep_spot.setFixedHeight(1)
+        status_inner.addWidget(sep_spot)
+
+        self.lbl_spot_status = QLabel("● Automatic Media Integration Active", status_section)
         self.lbl_spot_status.setObjectName("SettingDescription")
         status_inner.addWidget(self.lbl_spot_status)
         
@@ -999,7 +1042,7 @@ class SettingsWindow(QWidget):
         demo_text_col.setSpacing(2)
         lbl_demo = QLabel("Spotify Demo Mode", status_section)
         lbl_demo.setObjectName("SettingLabel")
-        lbl_demo_desc = QLabel("Simulate playback without Spotify credentials", status_section)
+        lbl_demo_desc = QLabel("Simulate playback without any media playing", status_section)
         lbl_demo_desc.setObjectName("SettingDescription")
         demo_text_col.addWidget(lbl_demo)
         demo_text_col.addWidget(lbl_demo_desc)
@@ -1013,12 +1056,9 @@ class SettingsWindow(QWidget):
         status_inner.addLayout(demo_row)
         
         self.lbl_spotify_guide = QLabel(
-            "<b>Setup Instructions:</b><br>"
-            "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#FF9F0A;'>developer.spotify.com/dashboard</a> and log in.<br>"
-            "2. Click <b>Create App</b>.<br>"
-            "3. Add Redirect URI: <a href='copy' style='color:#FFD60A; text-decoration:underline;'>http://127.0.0.1:8888/callback</a> (Click to copy)<br>"
-            "4. Paste the Client ID & Secret below.<br>"
-            "<span style='color:#FF453A; font-weight:bold;'>⚠️ Spotify Policy Note:</span> Playback controls (play, pause, skip) require a <b>Spotify Premium</b> account. Free accounts can only fetch currently playing details.", 
+            "<b>Automatic (Windows Media):</b><br>"
+            "Ticky uses native Windows Global System Media Transport Controls (GSMTC) to automatically detect and control <b>Spotify Desktop</b> and <b>Spotify Web Player</b>.<br>"
+            "No Client ID, Secret, or OAuth setup required.", 
             status_section
         )
         self.lbl_spotify_guide.setObjectName("SettingDescription")
@@ -1050,21 +1090,21 @@ class SettingsWindow(QWidget):
         self.lbl_spotify_guide.linkActivated.connect(handle_guide_link)
         status_inner.addWidget(self.lbl_spotify_guide)
         
-        creds_section = QFrame(spot_content)
-        creds_section.setObjectName("SettingSection")
-        creds_inner = QVBoxLayout(creds_section)
+        self.creds_section = QFrame(spot_content)
+        self.creds_section.setObjectName("SettingSection")
+        creds_inner = QVBoxLayout(self.creds_section)
         creds_inner.setContentsMargins(12, 10, 12, 10)
         creds_inner.setSpacing(8)
         
-        lbl_creds_title = QLabel("API Credentials Configuration", creds_section)
-        lbl_creds_title.setObjectName("SettingLabel")
-        creds_inner.addWidget(lbl_creds_title)
+        self.lbl_creds_title = QLabel("Spotify Developer API Configuration", self.creds_section)
+        self.lbl_creds_title.setObjectName("SettingLabel")
+        creds_inner.addWidget(self.lbl_creds_title)
         
-        self.input_client_id = QLineEdit(creds_section)
+        self.input_client_id = QLineEdit(self.creds_section)
         self.input_client_id.setObjectName("SpotifyInput")
         self.input_client_id.setPlaceholderText("Spotify Client ID")
         
-        self.input_client_secret = QLineEdit(creds_section)
+        self.input_client_secret = QLineEdit(self.creds_section)
         self.input_client_secret.setObjectName("SpotifyInput")
         self.input_client_secret.setPlaceholderText("Spotify Client Secret")
         self.input_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
@@ -1081,10 +1121,10 @@ class SettingsWindow(QWidget):
         spot_content_layout.addWidget(lbl_conn_title)
         spot_content_layout.addWidget(status_section)
         
-        lbl_api_title = QLabel("Developer API Configuration", spot_content)
-        lbl_api_title.setObjectName("SettingSectionTitle")
-        spot_content_layout.addWidget(lbl_api_title)
-        spot_content_layout.addWidget(creds_section)
+        self.lbl_api_title = QLabel("Developer API Configuration (Optional)", spot_content)
+        self.lbl_api_title.setObjectName("SettingSectionTitle")
+        spot_content_layout.addWidget(self.lbl_api_title)
+        spot_content_layout.addWidget(self.creds_section)
         spot_content_layout.addStretch()
         
         spot_scroll.setWidget(spot_content)
@@ -1094,7 +1134,7 @@ class SettingsWindow(QWidget):
         spot_btn_layout.setSpacing(10)
         spot_btn_layout.setContentsMargins(0, 4, 0, 0)
         
-        self.btn_save_spotify = QPushButton("Save Credentials", page_spotify)
+        self.btn_save_spotify = QPushButton("Save Mode / Credentials", page_spotify)
         self.btn_save_spotify.setStyleSheet(self.get_action_button_style())
         self.btn_save_spotify.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save_spotify.clicked.connect(self.save_spotify_creds)
@@ -1109,6 +1149,7 @@ class SettingsWindow(QWidget):
         page_spotify_layout.addLayout(spot_btn_layout)
         
         self.stacked_widget.addWidget(page_spotify)
+
         
         # --- Page 6: AI settings ---
         page_ai = QWidget()
@@ -1639,14 +1680,25 @@ class SettingsWindow(QWidget):
         if self.parent_window:
             self.parent_window.refresh_theme()
 
+    def on_spot_mode_changed(self, index):
+        mode = "gsmtc" if index == 0 else "api"
+        config.save_spotify_backend_mode(mode)
+        self.update_spotify_status_ui()
+        if self.parent_window and hasattr(self.parent_window, 'spotify_panel'):
+            self.parent_window.spotify_panel.update_playback()
+
     def save_spotify_creds(self):
         c_id = self.input_client_id.text().strip()
         c_secret = self.input_client_secret.text().strip()
         config.save_spotify_credentials(c_id, c_secret)
+        mode = "gsmtc" if self.combo_spot_mode.currentIndex() == 0 else "api"
+        config.save_spotify_backend_mode(mode)
         self.btn_save_spotify.setText("Saved!")
         self.update_spotify_status_ui()
+        if self.parent_window and hasattr(self.parent_window, 'spotify_panel'):
+            self.parent_window.spotify_panel.update_playback()
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: self.btn_save_spotify.setText("Save Credentials"))
+        QTimer.singleShot(1500, lambda: self.btn_save_spotify.setText("Save Mode / Credentials"))
 
     def save_ai_key(self):
         provider = self.combo_provider.currentText()
@@ -1779,22 +1831,55 @@ class SettingsWindow(QWidget):
         c_id, c_secret = config.load_spotify_credentials()
         access, refresh = config.load_spotify_tokens()
         demo = config.load_spotify_demo_mode()
+        backend_mode = config.load_spotify_backend_mode("gsmtc")
         
         has_creds = bool(c_id.strip() and c_secret.strip())
-        self.btn_connect_spotify.setEnabled(has_creds)
         
-        if demo:
-            self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
-            self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
-        elif access and refresh:
-            self.lbl_spot_status.setText("Status: Linked & Connected")
-            self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
-        elif c_id and c_secret:
-            self.lbl_spot_status.setText("Status: Credentials Saved. Ready to Connect.")
-            self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
+        if backend_mode == "gsmtc":
+            self.lbl_api_title.hide()
+            self.creds_section.hide()
+            self.btn_connect_spotify.hide()
+            self.btn_save_spotify.setText("Save Mode")
+            
+            if demo:
+                self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
+                self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
+            else:
+                self.lbl_spot_status.setText("● Automatic Integration Active (Windows Media)")
+                self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
+                self.lbl_spotify_guide.setText(
+                    "<b>Automatic (Windows Media):</b><br>"
+                    "Ticky uses native Windows Global System Media Transport Controls (GSMTC) to automatically detect and control <b>Spotify Desktop</b> and <b>Spotify Web Player</b>.<br>"
+                    "No Client ID, Secret, or OAuth setup required."
+                )
         else:
-            self.lbl_spot_status.setText("⚠️ Please link your Spotify account below.")
-            self.lbl_spot_status.setStyleSheet("color: #FF453A; font-weight: bold;")
+            self.lbl_api_title.show()
+            self.creds_section.show()
+            self.btn_connect_spotify.show()
+            self.btn_connect_spotify.setEnabled(has_creds)
+            self.btn_save_spotify.setText("Save Credentials")
+            
+            if demo:
+                self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
+                self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
+            elif access and refresh:
+                self.lbl_spot_status.setText("Status: Linked & Connected via Web API")
+                self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
+            elif c_id and c_secret:
+                self.lbl_spot_status.setText("Status: Credentials Saved. Ready to Connect.")
+                self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
+            else:
+                self.lbl_spot_status.setText("⚠️ Please link your Spotify Developer account below.")
+                self.lbl_spot_status.setStyleSheet("color: #FF453A; font-weight: bold;")
+            
+            self.lbl_spotify_guide.setText(
+                "<b>Developer API Setup Instructions:</b><br>"
+                "1. Visit <a href='https://developer.spotify.com/dashboard' style='color:#FF9F0A;'>developer.spotify.com/dashboard</a> and log in.<br>"
+                "2. Click <b>Create App</b>.<br>"
+                "3. Add Redirect URI: <a href='copy' style='color:#FFD60A; text-decoration:underline;'>http://127.0.0.1:8888/callback</a> (Click to copy)<br>"
+                "4. Paste the Client ID & Secret below."
+            )
+
 
     def connect_spotify_account(self):
         c_id, c_secret = config.load_spotify_credentials()

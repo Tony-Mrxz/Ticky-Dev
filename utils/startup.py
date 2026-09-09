@@ -12,17 +12,19 @@ def set_startup(enabled):
     import winreg
     
     if getattr(sys, 'frozen', False):
-        app_path = sys.executable
+        # Compiled executable mode (PyInstaller EXE)
+        cmd = f'"{sys.executable}"'
     else:
-        app_path = os.path.abspath(sys.argv[0])
+        # Python script mode (.py) - must include python interpreter
+        script_path = os.path.abspath(sys.argv[0])
+        cmd = f'"{sys.executable}" "{script_path}"'
         
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
     try:
-        # Open HKEY_CURRENT_USER run key
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+        # Open HKEY_CURRENT_USER Run key with write access
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
         if enabled:
-            # Wrap path in quotes to support spaces in file paths correctly
-            winreg.SetValueEx(key, "Ticky", 0, winreg.REG_SZ, f'"{app_path}"')
+            winreg.SetValueEx(key, "Ticky", 0, winreg.REG_SZ, cmd)
         else:
             try:
                 winreg.DeleteValue(key, "Ticky")

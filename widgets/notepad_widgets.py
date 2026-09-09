@@ -137,12 +137,16 @@ class MaximizedNoteWidget(QWidget):
     back_clicked = Signal(int, str)
     
     BACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="COLOR" viewBox="0 0 24 24">
-    <path d="M9.16 12.25 6.63 10H15c2.21 0 4 1.79 4 4v6h2v-6c0-3.31-2.69-6-6-6H6.63l2.53-2.25-1.33-1.49-5.34 4.75 5.34 4.75 1.33-1.49Z"></path>
+    <path d="M9 10h6c2.21 0 4 1.79 4 4s-1.79 4-4 4h-3v2h3c3.31 0 6-2.69 6-6s-2.69-6-6-6H9V4L3 9l6 5z"></path>
     </svg>"""
     
     COPY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="COLOR" viewBox="0 0 24 24">
     <path d="M20 2H10c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2m0 12H10V4h10z"></path>
     <path d="M14 20H4V10h2V8H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-2h-2z"></path>
+    </svg>"""
+
+    DELETE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="COLOR" viewBox="0 0 24 24">
+    <path d="M17 6V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H2v2h2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8h2V6zM9 4h6v2H9zM6 20V8h12v12z"></path><path d="M9 10h2v8H9zm4 0h2v8h-2z"></path>
     </svg>"""
 
     def __init__(self, index, text, color_hex, parent=None):
@@ -164,19 +168,21 @@ class MaximizedNoteWidget(QWidget):
         self.card_frame.setObjectName("NoteCardFrame")
         
         card_layout = QVBoxLayout(self.card_frame)
-        card_layout.setContentsMargins(12, 6, 12, 8)
-        card_layout.setSpacing(4)
+        card_layout.setContentsMargins(12, 6, 12, 6)
+        card_layout.setSpacing(2)
         
         # 1. Top Bar
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
         
         self.btn_back = QPushButton(self.card_frame)
+        self.btn_back.setToolTip("Back to Notes")
         self.btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_back.setFixedSize(28, 28)
         self.btn_back.clicked.connect(self.on_back)
         
         self.btn_copy = QPushButton(self.card_frame)
+        self.btn_copy.setToolTip("Copy Note")
         self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_copy.setFixedSize(28, 28)
         self.btn_copy.clicked.connect(self.on_copy)
@@ -191,18 +197,49 @@ class MaximizedNoteWidget(QWidget):
         top_bar.addWidget(self.btn_copy)
         card_layout.addLayout(top_bar)
         
-        # 2. Text Editor
+        # 2. Text Editor (Fills full height of card frame)
         self.text_edit = QTextEdit(self.card_frame)
         self.text_edit.setPlaceholderText("Type your note here...")
         self.text_edit.setText(text)
         self.text_edit.textChanged.connect(self.on_text_changed)
-        card_layout.addWidget(self.text_edit)
+        card_layout.addWidget(self.text_edit, 1)
+        
+        # 3. Floating Delete Button (Overlaid at bottom right of card_frame)
+        self.btn_delete = QPushButton(self.card_frame)
+        self.btn_delete.setToolTip("Delete Note")
+        self.btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_delete.setFixedSize(22, 22)
+        self.btn_delete._hovered = False
+        self.btn_delete.clicked.connect(self.on_delete)
+        self.btn_delete.raise_()
         
         main_layout.addWidget(self.card_frame)
         
         self.update_style()
         self.update_icons()
         self.on_text_changed()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'btn_delete') and self.btn_delete and hasattr(self, 'card_frame'):
+            fw = self.card_frame.width()
+            fh = self.card_frame.height()
+            self.btn_delete.move(fw - 26, fh - 26)
+            self.btn_delete.raise_()
+
+    def _on_delete_enter(self, e):
+        self.btn_delete._hovered = True
+        self.update_icons()
+
+    def _on_delete_leave(self, e):
+        self.btn_delete._hovered = False
+        self.update_icons()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
         
     def update_style(self):
         sec_color = QColor(theme.SEC_CARD_COLOR)
@@ -231,6 +268,44 @@ class MaximizedNoteWidget(QWidget):
                 font-family: {theme.FONT_FAMILY};
                 font-size: 11px;
                 line-height: 1.3;
+                padding-right: 4px;
+                padding-bottom: 2px;
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 6px;
+                margin: 0px 0px 0px 0px;
+                border: none;
+            }}
+            QScrollBar::track:vertical {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255, 255, 255, 0.25);
+                min-height: 16px;
+                border-radius: 2px;
+                margin: 0px 1px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {theme.ACCENT_COLOR};
+                border-radius: 3px;
+                margin: 0px 0px;
+            }}
+            QScrollBar::handle:vertical:pressed {{
+                background: {theme.ACCENT_COLOR};
+                border-radius: 3px;
+                margin: 0px 0px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+                width: 0px;
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+                border: none;
             }}
         """)
         
@@ -240,8 +315,9 @@ class MaximizedNoteWidget(QWidget):
         accent = theme.ACCENT_COLOR
         back_svg = self.BACK_SVG.replace("COLOR", accent)
         copy_svg = self.COPY_SVG.replace("COLOR", accent if self.btn_copy.isEnabled() else "rgba(255,255,255,0.15)")
+        delete_svg = self.DELETE_SVG.replace("COLOR", accent)
         
-        for btn, svg_str in [(self.btn_back, back_svg), (self.btn_copy, copy_svg)]:
+        for btn, svg_str in [(self.btn_back, back_svg), (self.btn_copy, copy_svg), (self.btn_delete, delete_svg)]:
             renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
             pixmap = QPixmap(20, 20)
             pixmap.fill(Qt.GlobalColor.transparent)
@@ -312,6 +388,9 @@ class MaximizedNoteWidget(QWidget):
         new_text = self.text_edit.toPlainText().strip()
         self.animate_hide(lambda: self.back_clicked.emit(self.index, new_text))
         
+    def on_delete(self):
+        self.animate_hide(lambda: self.back_clicked.emit(self.index, ""))
+
     def on_copy(self):
         clipboard = QApplication.clipboard()
         if clipboard:

@@ -13,14 +13,22 @@ class BallWidget(QWidget):
         super().__init__(None)
         self.parent_window = parent_window
         
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.SubWindow
-        )
+        import sys
+        if sys.platform == 'darwin':
+            flags = (
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.Window
+            )
+        else:
+            flags = (
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.SubWindow
+            )
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
-        import sys
         if sys.platform == 'darwin':
             self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow, True)
         
@@ -273,3 +281,10 @@ class BallWidget(QWidget):
         painter.drawPath(checkmark)
         
         painter.restore()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        import sys
+        if sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), True)

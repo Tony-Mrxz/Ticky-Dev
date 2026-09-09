@@ -231,23 +231,32 @@ class SpotifyOAuthServerThread(QThread):
 class SpotifyWorker(QThread):
     data_fetched = Signal(dict)
 
-    def __init__(self, action, client, parent=None):
+    def __init__(self, action, media_manager=None, parent=None, arg=None):
         super().__init__(parent)
         self.action = action
-        self.client = client
+        self.media_manager = media_manager
+        self.arg = arg
         
     def run(self):
         try:
+            if not self.media_manager:
+                from utils.media_backend import MediaManager
+                self.media_manager = MediaManager()
+
             if self.action == "play":
-                self.client.play()
+                self.media_manager.play()
             elif self.action == "pause":
-                self.client.pause()
+                self.media_manager.pause()
+            elif self.action == "toggle":
+                self.media_manager.toggle_play_pause()
             elif self.action == "next":
-                self.client.next_track()
+                self.media_manager.next_track()
             elif self.action == "prev":
-                self.client.previous_track()
+                self.media_manager.previous_track()
+            elif self.action == "seek" and self.arg is not None:
+                self.media_manager.seek(self.arg)
             elif self.action == "poll":
-                playback = self.client.get_current_playback()
+                playback = self.media_manager.get_current_playback()
                 self.data_fetched.emit(playback or {})
         except Exception:
             if self.action == "poll":

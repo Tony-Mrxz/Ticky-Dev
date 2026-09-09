@@ -423,7 +423,11 @@ class MainWindow(QWidget):
         # Set frameless and tool window flags from configuration
         always_on_top = config.load_always_on_top()
         stick_on_desktop = config.load_stick_on_desktop()
-        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        if sys.platform == 'darwin':
+            flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window
+        else:
+            flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+
         if stick_on_desktop:
             flags |= Qt.WindowType.WindowStaysOnBottomHint
         elif always_on_top:
@@ -635,10 +639,13 @@ class MainWindow(QWidget):
             
         card.animate_hide(finish)
 
-    def complete_task(self, text):
+    def mark_task_completed(self, text):
         if text in self.tasks:
             self.tasks.remove(text)
             config.save_tasks(self.tasks)
+
+    def complete_task(self, text):
+        self.mark_task_completed(text)
         self.update_tasks_view()
 
     def update_tasks_view(self):
@@ -702,7 +709,8 @@ class MainWindow(QWidget):
                 from styles.theme import RAINBOW_COLORS
                 color_hex = RAINBOW_COLORS[self.current_page % len(RAINBOW_COLORS)]
                 card = TaskCard(text, color_hex, self)
-                card.completed.connect(lambda t=text: self.complete_task(t))
+                card.task_checked.connect(lambda t=text: self.mark_task_completed(t))
+                card.completed.connect(self.update_tasks_view)
                 card.focus_toggled.connect(lambda active, c=card: self.handle_task_focus_toggle(c, active))
                 if self.widget_state != "normal":
                     card.hide()
@@ -769,7 +777,8 @@ class MainWindow(QWidget):
                 from styles.theme import RAINBOW_COLORS
                 color_hex = RAINBOW_COLORS[global_idx % len(RAINBOW_COLORS)]
                 card = TaskCard(text, color_hex, self)
-                card.completed.connect(lambda t=text: self.complete_task(t))
+                card.task_checked.connect(lambda t=text: self.mark_task_completed(t))
+                card.completed.connect(self.update_tasks_view)
                 card.focus_toggled.connect(lambda active, c=card: self.handle_task_focus_toggle(c, active))
                 if self.widget_state != "normal":
                     card.hide()
@@ -882,6 +891,95 @@ class MainWindow(QWidget):
         self.setFixedHeight(self.height())
         self.update_tasks_view()
         self.fade_in_layout_widgets()
+
+    def add_task_from_ai(self, task_title, due_date=None, priority=None):
+        """Programmatically add a task from AI intent detection."""
+        if not task_title or not task_title.strip():
+            return ""
+        
+        full_title = task_title.strip()
+        meta_parts = []
+        if due_date and due_date.strip():
+            meta_parts.append(due_date.strip())
+        if priority and priority.strip():
+            meta_parts.append(priority.strip().capitalize())
+        if meta_parts:
+            full_title += f" ({', '.join(meta_parts)})"
+
+        if full_title not in self.tasks:
+            self.tasks.insert(0, full_title)
+            config.save_tasks(self.tasks)
+            self.current_page = 0
+            self.update_tasks_view()
+        return full_title
+
+    def add_note_from_ai(self, content, title=None):
+        """Programmatically add a note from AI intent detection."""
+        content_str = content.strip() if content else ""
+        title_str = title.strip() if title else ""
+        
+        if title_str and content_str:
+            if not content_str.lower().startswith(title_str.lower()):
+                note_text = f"{title_str}\n{content_str}"
+            else:
+                note_text = content_str
+        elif content_str:
+            note_text = content_str
+        elif title_str:
+            note_text = title_str
+        else:
+            return ""
+
+        if note_text not in self.notes:
+            self.notes.insert(0, note_text)
+            config.save_notes(self.notes)
+            self.update_tasks_view()
+        return note_text
+
+    def start_task_by_title(self, task_title):
+        """Find a task card matching title and trigger focus session mode."""
+        if not task_title or not self.tasks:
+            return False
+
+        clean_target = task_title.strip().lower()
+        target_idx = -1
+
+        # Search for exact or substring match in tasks list
+        for idx, t in enumerate(self.tasks):
+            if clean_target in t.lower() or t.lower() in clean_target:
+                target_idx = idx
+                break
+
+        if target_idx == -1:
+            target_idx = 0  # Fallback to top task
+
+        # Calculate page index for standard/hybrid views
+        if len(self.notes) > 0:
+            self.current_page = min(target_idx, len(self.tasks) - 1)
+        else:
+            self.current_page = target_idx // 3
+
+        self.update_tasks_view()
+
+        # Find TaskCard widget and activate focus
+        for i in range(self.tasks_layout.count()):
+            item = self.tasks_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), TaskCard):
+                card = item.widget()
+                card_text = card.text_label.text().lower()
+                if clean_target in card_text or card_text in clean_target:
+                    self.handle_task_focus_toggle(card, True)
+                    return True
+
+        # Fallback to first TaskCard found
+        for i in range(self.tasks_layout.count()):
+            item = self.tasks_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), TaskCard):
+                card = item.widget()
+                self.handle_task_focus_toggle(card, True)
+                return True
+
+        return False
 
     def unlock_window_height(self):
         self.setMinimumSize(0, 0)
@@ -1278,6 +1376,12 @@ class MainWindow(QWidget):
         if hasattr(self, 'toolbar') and self.toolbar:
             self.toolbar.btn_settings.setActive(True)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), config.load_always_on_top())
+
     def set_stick_on_desktop(self, enabled):
         # Save current position to prevent position resetting on Windows
         curr_pos = self.pos()
@@ -1298,6 +1402,10 @@ class MainWindow(QWidget):
         if is_visible:
             self.show()
 
+        if sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), not enabled and config.load_always_on_top())
+
     def set_always_on_top(self, enabled):
         # Save current position to prevent position resetting on Windows
         curr_pos = self.pos()
@@ -1317,6 +1425,10 @@ class MainWindow(QWidget):
         
         if is_visible:
             self.show()
+
+        if sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), enabled)
 
     def refresh_theme(self):
         # Refresh global application stylesheet for tooltips and menus

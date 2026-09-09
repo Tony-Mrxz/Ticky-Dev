@@ -7,7 +7,14 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('styles/fonts', 'styles/fonts')],
-    hiddenimports=[],
+    hiddenimports=[
+        'winrt',
+        'winrt.windows.media.control',
+        'winrt.windows.storage.streams',
+        'winrt.windows.foundation',
+        'winrt.windows.foundation.collections',
+        'winrt.windows.media'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

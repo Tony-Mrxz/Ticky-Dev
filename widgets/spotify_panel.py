@@ -8,7 +8,8 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
 from utils import config
-from utils.spotify import SpotifyClient, SpotifyWorker
+from utils.spotify import SpotifyWorker
+from utils.media_backend import MediaManager
 from styles import theme
 from styles import qss
 from widgets.toolbar import ToolbarButton
@@ -164,8 +165,9 @@ class SpotifyPanel(QWidget):
     def __init__(self, parent_window=None):
         super().__init__(parent_window)
         self.parent_window = parent_window
-        self.client = SpotifyClient()
+        self.media_manager = MediaManager()
         self.is_expanded = False
+
         
         # State management
         self.current_track_id = None
@@ -261,24 +263,26 @@ class SpotifyPanel(QWidget):
         details_layout.addWidget(self.lbl_title)
         details_layout.addWidget(self.lbl_artist)
         
-        # Timeline slider layout
-        timeline_layout = QHBoxLayout()
+        # Timeline slider container
+        self.timeline_container = QWidget(self.card)
+        timeline_layout = QHBoxLayout(self.timeline_container)
         timeline_layout.setContentsMargins(0, 0, 0, 0)
         timeline_layout.setSpacing(6)
         
-        self.slider = QSlider(Qt.Orientation.Horizontal, self.card)
+        self.slider = QSlider(Qt.Orientation.Horizontal, self.timeline_container)
         self.slider.setObjectName("SpotifyTimeline")
         self.slider.setRange(0, 100)
         self.slider.setValue(0)
         self.slider.setCursor(Qt.CursorShape.PointingHandCursor)
         self.slider.sliderPressed.connect(lambda: self.slider.setValue(self.slider.value())) 
         
-        self.lbl_time = QLabel("0:00 / 0:00", self.card)
+        self.lbl_time = QLabel("0:00 / 0:00", self.timeline_container)
         self.lbl_time.setObjectName("SpotifyTimeLabel")
         
         timeline_layout.addWidget(self.slider)
         timeline_layout.addWidget(self.lbl_time)
-        details_layout.addLayout(timeline_layout)
+        details_layout.addWidget(self.timeline_container)
+        self.update_timeline_visibility()
         
         # Control Buttons row using unified ToolbarButton elements (without background hover glow)
         ctrl_layout = QHBoxLayout()
@@ -304,8 +308,17 @@ class SpotifyPanel(QWidget):
         main_layout.addWidget(self.card)
         self.refresh_styles()
 
+    def update_timeline_visibility(self):
+        """Show timeline slider only when using Spotify API or Demo mode."""
+        demo = config.load_spotify_demo_mode()
+        backend_mode = config.load_spotify_backend_mode("gsmtc")
+        show_timeline = demo or (backend_mode == "api")
+        if hasattr(self, 'timeline_container'):
+            self.timeline_container.setVisible(show_timeline)
+
     def refresh_styles(self):
         """Update buttons and SVG colors dynamically using current theme accent."""
+        self.update_timeline_visibility()
         self.btn_prev.update()
         self.btn_play.update()
         self.btn_next.update()
@@ -386,26 +399,27 @@ class SpotifyPanel(QWidget):
             self.poll_spotify_api()
 
     def poll_spotify_api(self):
-        """Query Spotify current song state asynchronously using spawn_worker."""
+        """Query current playback state asynchronously using MediaManager via SpotifyWorker."""
         if config.load_spotify_demo_mode():
             return
             
-        access, _ = config.load_spotify_tokens()
-        if not access:
-            self.lbl_title.setText("Not Connected")
-            self.lbl_artist.setText("Connect in Settings")
-            self.cd_widget.set_placeholder("?", "#555555")
-            return
+        backend_mode = config.load_spotify_backend_mode("gsmtc")
+        if backend_mode == "api":
+            access, _ = config.load_spotify_tokens()
+            if not access:
+                self.lbl_title.setText("Not Connected")
+                self.lbl_artist.setText("Connect in Settings")
+                self.cd_widget.set_placeholder("?", "#555555")
+                return
             
-        # Spawn thread-safe background SpotifyWorker
-        worker = SpotifyWorker("poll", self.client, self)
+        worker = SpotifyWorker("poll", self.media_manager, self)
         worker.data_fetched.connect(self.on_api_data_received)
         self.spawn_worker(worker)
 
     def on_api_data_received(self, data):
         if not data:
             self.lbl_title.setText("No active playback")
-            self.lbl_artist.setText("Start playing on Spotify")
+            self.lbl_artist.setText("Open Spotify Desktop or Web Player")
             self.cd_widget.set_placeholder("🎵", theme.BORDER_COLOR)
             self.is_playing = False
             self.progress_ms = 0
@@ -416,11 +430,16 @@ class SpotifyPanel(QWidget):
             self.refresh_styles()
             return
             
-        self.lbl_title.setText(data.get("title", "Unknown"))
-        self.lbl_artist.setText(data.get("artist", "Unknown"))
+        self.lbl_title.setText(data.get("title", "Unknown Track"))
+        self.lbl_artist.setText(data.get("artist", "Unknown Artist"))
         self.is_playing = data.get("is_playing", False)
         self.progress_ms = data.get("progress_ms", 0)
         self.duration_ms = data.get("duration_ms", 0)
+        
+        # Capability flags update
+        self.btn_prev.setEnabled(data.get("can_prev", True))
+        self.btn_next.setEnabled(data.get("can_next", True))
+        self.btn_play.setEnabled(data.get("can_play", True) or data.get("can_pause", True))
         
         # Sync Play/Pause Template
         self.btn_play.set_svg_template(SVG_PLAY if not self.is_playing else SVG_PAUSE, "Play/Pause")
@@ -432,11 +451,23 @@ class SpotifyPanel(QWidget):
             self.cd_widget.stop_rotation()
         
         # Load Album Art
-        art_url = data.get("album_art")
-        if art_url and art_url != self.current_track_id:
-            self.current_track_id = art_url
-            self.network_manager.get(QNetworkRequest(QUrl(art_url)))
-        elif not art_url:
+        art_bytes = data.get("album_art_bytes")
+        art_url = data.get("album_art_url")
+        track_id = data.get("id")
+        
+        if art_bytes:
+            if track_id != self.current_track_id:
+                self.current_track_id = track_id
+                pixmap = QPixmap()
+                if pixmap.loadFromData(art_bytes):
+                    self.cd_widget.set_album_art(pixmap)
+                else:
+                    self.cd_widget.set_placeholder(data.get("title", "?"), theme.ACCENT_COLOR)
+        elif art_url:
+            if art_url != self.current_track_id:
+                self.current_track_id = art_url
+                self.network_manager.get(QNetworkRequest(QUrl(art_url)))
+        else:
             self.current_track_id = None
             self.cd_widget.set_placeholder(data.get("title", "?"), theme.ACCENT_COLOR)
             
@@ -499,8 +530,7 @@ class SpotifyPanel(QWidget):
         if demo:
             self.refresh_styles()
         else:
-            action = "pause" if not self.is_playing else "play"
-            worker = SpotifyWorker(action, self.client, self)
+            worker = SpotifyWorker("toggle", self.media_manager, self)
             worker.finished.connect(self.poll_spotify_api)
             self.spawn_worker(worker)
 
@@ -514,8 +544,8 @@ class SpotifyPanel(QWidget):
             self.cd_widget.start_rotation()
             self.update_playback()
         else:
-            worker = SpotifyWorker("next", self.client, self)
-            worker.finished.connect(lambda: QTimer.singleShot(800, self.poll_spotify_api))
+            worker = SpotifyWorker("next", self.media_manager, self)
+            worker.finished.connect(lambda: QTimer.singleShot(400, self.poll_spotify_api))
             self.spawn_worker(worker)
 
     def prev_clicked(self):
@@ -528,6 +558,7 @@ class SpotifyPanel(QWidget):
             self.cd_widget.start_rotation()
             self.update_playback()
         else:
-            worker = SpotifyWorker("prev", self.client, self)
-            worker.finished.connect(lambda: QTimer.singleShot(800, self.poll_spotify_api))
+            worker = SpotifyWorker("prev", self.media_manager, self)
+            worker.finished.connect(lambda: QTimer.singleShot(400, self.poll_spotify_api))
             self.spawn_worker(worker)
+

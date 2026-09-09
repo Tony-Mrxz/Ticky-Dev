@@ -191,6 +191,7 @@ class TaskCheckbox(QWidget):
 
 class TaskCard(QWidget):
     completed = Signal()
+    task_checked = Signal(str)
     focus_toggled = Signal(bool)
 
     def __init__(self, text, color_hex=None, parent=None):
@@ -350,6 +351,7 @@ class TaskCard(QWidget):
     def on_checkbox_toggle(self, checked):
         self.update_text_style()
         if checked:
+            self.task_checked.emit(self.text_label.text())
             # Map coordinates to MainWindow to draw particles outside clipping bounds
             main_window = self.window()
             if main_window and hasattr(main_window, 'celebration_overlay') and main_window.celebration_overlay:
@@ -359,32 +361,35 @@ class TaskCard(QWidget):
             QTimer.singleShot(800, self.animate_completion)
 
     def animate_completion(self):
-        # 1. Opacity fade out
-        self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity", self)
-        self.fade_anim.setDuration(150)
-        self.fade_anim.setStartValue(1.0)
-        self.fade_anim.setEndValue(0.0)
-        self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-        
-        # 2. Height collapse
-        self.height_anim = QPropertyAnimation(self, b"minimumHeight", self)
-        self.height_anim.setDuration(180)
-        self.height_anim.setStartValue(self._max_height)
-        self.height_anim.setEndValue(0)
-        self.height_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-        
-        self.height_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
-        self.height_anim2.setDuration(180)
-        self.height_anim2.setStartValue(self._max_height)
-        self.height_anim2.setEndValue(0)
-        self.height_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
-        
-        self.fade_anim.start()
-        self.height_anim.start()
-        self.height_anim2.start()
-        
-        # Emit completed signal when collapse finished
-        self.height_anim.finished.connect(self.completed.emit)
+        try:
+            # 1. Opacity fade out
+            self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+            self.fade_anim.setDuration(150)
+            self.fade_anim.setStartValue(1.0)
+            self.fade_anim.setEndValue(0.0)
+            self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            
+            # 2. Height collapse
+            self.height_anim = QPropertyAnimation(self, b"minimumHeight", self)
+            self.height_anim.setDuration(180)
+            self.height_anim.setStartValue(self._max_height)
+            self.height_anim.setEndValue(0)
+            self.height_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            
+            self.height_anim2 = QPropertyAnimation(self, b"maximumHeight", self)
+            self.height_anim2.setDuration(180)
+            self.height_anim2.setStartValue(self._max_height)
+            self.height_anim2.setEndValue(0)
+            self.height_anim2.setEasingCurve(QEasingCurve.Type.OutQuad)
+            
+            self.fade_anim.start()
+            self.height_anim.start()
+            self.height_anim2.start()
+            
+            # Emit completed signal when collapse finished
+            self.height_anim.finished.connect(self.completed.emit)
+        except Exception:
+            self.completed.emit()
 
     def paintEvent(self, event):
         painter = QPainter(self)
