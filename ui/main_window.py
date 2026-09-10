@@ -1348,24 +1348,40 @@ class MainWindow(QWidget):
         pos = self.pos()
         config.save_position(pos.x(), pos.y())
 
-    # Native class drop-shadow configuration
+    def apply_streaming_privacy(self, enabled=None):
+        """Apply OS-level screen capture exclusion to Ticky's windows."""
+        if enabled is None:
+            enabled = config.load_hide_while_streaming()
+        from utils.window_capture import set_window_capture_exclusion
+        set_window_capture_exclusion(int(self.winId()), enabled)
+        if hasattr(self, 'settings_window') and self.settings_window:
+            set_window_capture_exclusion(int(self.settings_window.winId()), enabled)
+        if hasattr(self, 'ball_widget') and self.ball_widget:
+            set_window_capture_exclusion(int(self.ball_widget.winId()), enabled)
+
+    # Native class drop-shadow configuration & window show handling
     def showEvent(self, event):
         super().showEvent(event)
         hwnd = self.winId()
-        try:
-            user32 = ctypes.windll.user32
-            if ctypes.sizeof(ctypes.c_void_p) == 8:
-                get_class_long = user32.GetClassLongPtrW
-                set_class_long = user32.SetClassLongPtrW
-            else:
-                get_class_long = user32.GetClassLongW
-                set_class_long = user32.SetClassLongW
-                
-            class_style = get_class_long(hwnd, -26) # GCL_STYLE is -26
-            class_style |= 0x00020000              # CS_DROPSHADOW
-            set_class_long(hwnd, -26, class_style)
-        except Exception:
-            pass
+        if sys.platform == 'win32':
+            try:
+                user32 = ctypes.windll.user32
+                if ctypes.sizeof(ctypes.c_void_p) == 8:
+                    get_class_long = user32.GetClassLongPtrW
+                    set_class_long = user32.SetClassLongPtrW
+                else:
+                    get_class_long = user32.GetClassLongW
+                    set_class_long = user32.SetClassLongW
+                    
+                class_style = get_class_long(hwnd, -26) # GCL_STYLE is -26
+                class_style |= 0x00020000              # CS_DROPSHADOW
+                set_class_long(hwnd, -26, class_style)
+            except Exception:
+                pass
+            self.apply_streaming_privacy()
+        elif sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), config.load_always_on_top())
 
     # Floating settings window display
     def show_settings_menu(self):
@@ -1375,12 +1391,6 @@ class MainWindow(QWidget):
         self.settings_window.show_centered()
         if hasattr(self, 'toolbar') and self.toolbar:
             self.toolbar.btn_settings.setActive(True)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if sys.platform == 'darwin':
-            from utils.mac_window import configure_mac_window
-            configure_mac_window(self.winId(), config.load_always_on_top())
 
     def set_stick_on_desktop(self, enabled):
         # Save current position to prevent position resetting on Windows

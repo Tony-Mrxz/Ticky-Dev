@@ -584,10 +584,32 @@ class SettingsWindow(QWidget):
         self.switch_aot.toggled_state.connect(self.on_aot_toggled)
         self.switch_sod.toggled_state.connect(self.on_sod_toggled)
         
+        # Privacy & Streaming Card
+        streaming_section = QFrame(gen_content)
+        streaming_section.setObjectName("SettingSection")
+        streaming_inner = QVBoxLayout(streaming_section)
+        streaming_inner.setContentsMargins(12, 10, 12, 10)
+        streaming_inner.setSpacing(0)
+        
+        self.switch_hide_streaming = ToggleSwitch(streaming_section)
+        self.switch_hide_streaming.setChecked(config.load_hide_while_streaming())
+        self.switch_hide_streaming.toggled_state.connect(self.on_hide_streaming_toggled)
+        _add_gen_row(
+            streaming_inner, 
+            "Hide while streaming", 
+            "Ticky stays visible to you but is hidden from supported screen captures.", 
+            self.switch_hide_streaming
+        )
+
         lbl_sys_title = QLabel("System & Behavior", gen_content)
         lbl_sys_title.setObjectName("SettingSectionTitle")
         gen_content_layout.addWidget(lbl_sys_title)
         gen_content_layout.addWidget(window_section)
+
+        lbl_streaming_title = QLabel("Privacy & Streaming", gen_content)
+        lbl_streaming_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_streaming_title)
+        gen_content_layout.addWidget(streaming_section)
         
         lbl_disp_title = QLabel("Display Options", gen_content)
         lbl_disp_title.setObjectName("SettingSectionTitle")
@@ -1562,6 +1584,19 @@ class SettingsWindow(QWidget):
             self.switch_aot.setChecked(False)
             self.on_aot_toggled(False)
 
+    def on_hide_streaming_toggled(self, checked):
+        config.save_hide_while_streaming(checked)
+        from utils.window_capture import set_window_capture_exclusion
+        set_window_capture_exclusion(int(self.winId()), checked)
+        if self.parent_window and hasattr(self.parent_window, "apply_streaming_privacy"):
+            self.parent_window.apply_streaming_privacy(checked)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from utils import config
+        from utils.window_capture import set_window_capture_exclusion
+        set_window_capture_exclusion(int(self.winId()), config.load_hide_while_streaming())
+
     def save_general_settings(self):
         aot = self.switch_aot.isChecked()
         tfh = self.switch_tfh.isChecked()
@@ -1571,6 +1606,7 @@ class SettingsWindow(QWidget):
         moi = self.switch_minimize_idle.isChecked()
         moi_min = self.spin_idle_minutes.value()
         sos = self.switch_sos.isChecked()
+        hws = self.switch_hide_streaming.isChecked()
         
         config.save_always_on_top(aot)
         config.save_use_24h(tfh)
@@ -1580,6 +1616,7 @@ class SettingsWindow(QWidget):
         config.save_minimize_on_idle(moi)
         config.save_idle_minutes(moi_min)
         config.save_start_on_startup(sos)
+        config.save_hide_while_streaming(hws)
         
         # Sync with Windows registry run key
         from utils.startup import set_startup
@@ -1589,11 +1626,16 @@ class SettingsWindow(QWidget):
         theme.SHOW_DATE = dat
         theme.PIN_POSITION = pin
         theme.STICK_ON_DESKTOP = sod
+
+        from utils.window_capture import set_window_capture_exclusion
+        set_window_capture_exclusion(int(self.winId()), hws)
         
         if self.parent_window:
             if hasattr(self.parent_window, "set_stick_on_desktop"):
                 self.parent_window.set_stick_on_desktop(sod)
             self.parent_window.set_always_on_top(aot)
+            if hasattr(self.parent_window, "apply_streaming_privacy"):
+                self.parent_window.apply_streaming_privacy(hws)
             if hasattr(self.parent_window, "update_inactivity_timer_settings"):
                 self.parent_window.update_inactivity_timer_settings()
             self.parent_window.refresh_theme()

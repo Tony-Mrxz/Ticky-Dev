@@ -265,3 +265,12 @@ def load_notes():
 def save_notes(notes_list):
     """Save the list of active notes/notepads."""
     save_config({"notes": notes_list})
+
+def load_hide_while_streaming(default_value=False):
+    """Load whether hide while streaming mode is enabled."""
+    return load_config().get("hide_while_streaming", default_value)
+
+def save_hide_while_streaming(value):
+    """Save whether hide while streaming mode is enabled."""
+    save_config({"hide_while_streaming": value})
+

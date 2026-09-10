@@ -129,6 +129,15 @@ class BallWidget(QWidget):
         self.original_x = self.x()
         self.reminder_timer.start()
 
+        import sys
+        if sys.platform == 'win32':
+            from utils import config
+            from utils.window_capture import set_window_capture_exclusion
+            set_window_capture_exclusion(int(self.winId()), config.load_hide_while_streaming())
+        elif sys.platform == 'darwin':
+            from utils.mac_window import configure_mac_window
+            configure_mac_window(self.winId(), True)
+
     def hideEvent(self, event):
         super().hideEvent(event)
         self.reminder_timer.stop()
@@ -282,9 +291,3 @@ class BallWidget(QWidget):
         
         painter.restore()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        import sys
-        if sys.platform == 'darwin':
-            from utils.mac_window import configure_mac_window
-            configure_mac_window(self.winId(), True)
