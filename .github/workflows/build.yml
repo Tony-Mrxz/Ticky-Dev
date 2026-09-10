@@ -39,15 +39,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Clean build directories
+        shell: bash
+        run: |
+          rm -rf build dist
+
       - name: Build with PyInstaller (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          pyinstaller Ticky.spec
+          pyinstaller --clean --noconfirm Ticky.spec
 
       - name: Build with PyInstaller and Package DMG (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          pyinstaller Ticky.spec
+          pyinstaller --clean --noconfirm Ticky.spec
           hdiutil create -fs HFS+ -volname "Ticky" -srcfolder dist/Ticky.app dist/Ticky.dmg
 
       - name: Upload Artifact
@@ -55,7 +60,7 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.output-path }}
-          retention-days: 5
+          retention-days: 3
           if-no-files-found: error
 
   publish:
