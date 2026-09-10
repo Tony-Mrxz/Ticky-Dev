@@ -1556,6 +1556,7 @@ class MainWindow(QWidget):
             if not hasattr(self, 'settings_window') or self.settings_window is None:
                 from ui.settings_window import SettingsWindow
                 self.settings_window = SettingsWindow(self)
+            self.settings_window.opened_from_ai = True
             self.settings_window.show_centered()
             self.settings_window.switch_page(5)
         else:

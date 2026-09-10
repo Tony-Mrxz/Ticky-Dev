@@ -329,6 +329,7 @@ class SettingsWindow(QWidget):
         self.parent_window = parent
         self.selected_font = config.load_font_family("Inter")
         self.clock_weight = config.load_clock_weight("700")
+        self.opened_from_ai = False
         
         # Movable drag state variables
         self.drag_start_pos = QPoint()
@@ -1785,6 +1786,14 @@ class SettingsWindow(QWidget):
         if self.parent_window and hasattr(self.parent_window, "ai_panel") and self.parent_window.ai_panel:
             self.parent_window.ai_panel.update_welcome_text()
 
+        # If opened from AI flow (e.g. AI toolbar button), close Settings and return to/show the AI chat panel
+        if getattr(self, 'opened_from_ai', False):
+            self.opened_from_ai = False
+            self.close()
+            if self.parent_window and hasattr(self.parent_window, 'ai_panel') and self.parent_window.ai_panel:
+                if not self.parent_window.ai_panel.is_expanded:
+                    self.parent_window.ai_panel.toggle()
+
     def save_shortcut_settings(self):
         t_sc = self.input_toggle_shortcut.text().strip()
         n_sc = self.input_new_task_shortcut.text().strip()
@@ -2002,6 +2011,7 @@ class SettingsWindow(QWidget):
             self.parent_window.refresh_theme()
 
     def closeEvent(self, event):
+        self.opened_from_ai = False
         if self.parent_window and hasattr(self.parent_window, 'register_global_hotkeys'):
             self.parent_window.register_global_hotkeys()
         if self.parent_window and hasattr(self.parent_window, 'toolbar'):
