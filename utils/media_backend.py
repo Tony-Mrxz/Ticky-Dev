@@ -1,9 +1,22 @@
 import os
+import sys
 import asyncio
 import time
 from abc import ABC, abstractmethod
-import winrt.windows.media.control as wmc
-import winrt.windows.storage.streams as wss
+
+IS_WINDOWS = sys.platform == "win32"
+
+if IS_WINDOWS:
+    try:
+        import winrt.windows.media.control as wmc
+        import winrt.windows.storage.streams as wss
+    except ImportError:
+        wmc = None
+        wss = None
+else:
+    wmc = None
+    wss = None
+
 from utils import config
 
 def _run_async(coro):
@@ -82,6 +95,8 @@ class WindowsMediaBackend(BaseMediaBackend):
         self._cached_artwork_bytes = None
         
     async def _get_manager(self):
+        if not wmc:
+            return None
         try:
             return await wmc.GlobalSystemMediaTransportControlsSessionManager.request_async()
         except Exception:

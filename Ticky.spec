@@ -2,19 +2,22 @@
 import sys
 import os
 
+is_win = sys.platform == 'win32'
+winrt_hiddenimports = [
+    'winrt',
+    'winrt.windows.media.control',
+    'winrt.windows.storage.streams',
+    'winrt.windows.foundation',
+    'winrt.windows.foundation.collections',
+    'winrt.windows.media'
+] if is_win else []
+
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[('styles/fonts', 'styles/fonts')],
-    hiddenimports=[
-        'winrt',
-        'winrt.windows.media.control',
-        'winrt.windows.storage.streams',
-        'winrt.windows.foundation',
-        'winrt.windows.foundation.collections',
-        'winrt.windows.media'
-    ],
+    hiddenimports=winrt_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

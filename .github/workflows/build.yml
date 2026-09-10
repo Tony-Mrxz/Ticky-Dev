@@ -55,6 +55,7 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.output-path }}
+          retention-days: 5
           if-no-files-found: error
 
   publish:
