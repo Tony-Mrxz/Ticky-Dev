@@ -133,22 +133,31 @@ class NewButtonContainer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.expanded = False
+        self._plus_angle = 0.0
         self.setFixedHeight(38)
         self.setMinimumWidth(38)
         self.setMaximumWidth(38)
         
         self.btn_task = QPushButton("Task", self)
-        self.btn_task.setObjectName("NewActionSubButton")
+        self.btn_task.setObjectName("NewActionSubButtonTask")
         self.btn_task.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_task.setFixedSize(42, 30)
         self.btn_task.clicked.connect(self.on_task)
+        
+        self.opacity_task = QGraphicsOpacityEffect(self.btn_task)
+        self.btn_task.setGraphicsEffect(self.opacity_task)
+        self.opacity_task.setOpacity(0.0)
         self.btn_task.hide()
         
         self.btn_note = QPushButton("Note", self)
-        self.btn_note.setObjectName("NewActionSubButton")
+        self.btn_note.setObjectName("NewActionSubButtonNote")
         self.btn_note.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_note.setFixedSize(42, 30)
         self.btn_note.clicked.connect(self.on_note)
+        
+        self.opacity_note = QGraphicsOpacityEffect(self.btn_note)
+        self.btn_note.setGraphicsEffect(self.opacity_note)
+        self.opacity_note.setOpacity(0.0)
         self.btn_note.hide()
         
         self.btn_new = QPushButton(self)
@@ -160,7 +169,7 @@ class NewButtonContainer(QWidget):
         self.refresh_colors()
         
         self.width_anim = QPropertyAnimation(self, b"anim_width", self)
-        self.width_anim.setDuration(250)
+        self.width_anim.setDuration(260)
         self.width_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         
     @Property(int)
@@ -170,24 +179,54 @@ class NewButtonContainer(QWidget):
     @anim_width.setter
     def anim_width(self, w):
         self.setFixedWidth(w)
+        progress = max(0.0, min(1.0, (w - 38) / (134 - 38)))
+        
+        # Smoothly morph + into × (135 degrees rotation)
+        self._plus_angle = progress * 135.0
+        self.update_icons()
+        
+        # Fade & slide sub-buttons
+        if hasattr(self, 'opacity_task') and self.opacity_task:
+            self.opacity_task.setOpacity(progress)
+        if hasattr(self, 'opacity_note') and self.opacity_note:
+            self.opacity_note.setOpacity(progress)
+            
+        task_x = int(4 + (1.0 - progress) * 20)
+        note_x = int(52 + (1.0 - progress) * 12)
+        self.btn_task.move(task_x, 4)
+        self.btn_note.move(note_x, 4)
+        
         if self.parent() and hasattr(self.parent(), "adjust_layout_height"):
             self.parent().adjust_layout_height()
             
     def update_icons(self):
         from PySide6.QtSvg import QSvgRenderer
         
-        # Color of the plus icon inside the circle
         color_hex = "#FFFFFF"
-        
         svg_str = self.PLUS_SVG.replace("COLOR", color_hex)
         renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
-        pixmap = QPixmap(18, 18)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
         
-        self.btn_new.setIcon(QIcon(pixmap))
+        src_pixmap = QPixmap(18, 18)
+        src_pixmap.fill(Qt.GlobalColor.transparent)
+        p = QPainter(src_pixmap)
+        renderer.render(p)
+        p.end()
+        
+        angle = getattr(self, "_plus_angle", 0.0)
+        if angle != 0:
+            rot_pixmap = QPixmap(18, 18)
+            rot_pixmap.fill(Qt.GlobalColor.transparent)
+            p = QPainter(rot_pixmap)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.translate(9, 9)
+            p.rotate(angle)
+            p.drawPixmap(-9, -9, src_pixmap)
+            p.end()
+            self.btn_new.setIcon(QIcon(rot_pixmap))
+        else:
+            self.btn_new.setIcon(QIcon(src_pixmap))
+            
         self.btn_new.setIconSize(QSize(18, 18))
         
     def refresh_colors(self):
@@ -206,8 +245,30 @@ class NewButtonContainer(QWidget):
             }}
         """)
         
-        sub_btn_style = f"""
-            QPushButton#NewActionSubButton {{
+        task_btn_style = f"""
+            QPushButton#NewActionSubButtonTask {{
+                background-color: transparent;
+                color: {theme.TEXT_SECONDARY};
+                border: none;
+                border-top-left-radius: 15px;
+                border-bottom-left-radius: 15px;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                font-weight: bold;
+            }}
+            QPushButton#NewActionSubButtonTask:hover {{
+                background-color: {theme.HOVER_COLOR};
+                color: {accent};
+            }}
+            QPushButton#NewActionSubButtonTask:pressed {{
+                background-color: rgba(255, 255, 255, 0.15);
+                color: {accent};
+            }}
+        """
+        note_btn_style = f"""
+            QPushButton#NewActionSubButtonNote {{
                 background-color: transparent;
                 color: {theme.TEXT_SECONDARY};
                 border: none;
@@ -216,17 +277,17 @@ class NewButtonContainer(QWidget):
                 font-size: 11px;
                 font-weight: bold;
             }}
-            QPushButton#NewActionSubButton:hover {{
+            QPushButton#NewActionSubButtonNote:hover {{
                 background-color: {theme.HOVER_COLOR};
                 color: {accent};
             }}
-            QPushButton#NewActionSubButton:pressed {{
+            QPushButton#NewActionSubButtonNote:pressed {{
                 background-color: rgba(255, 255, 255, 0.15);
                 color: {accent};
             }}
         """
-        self.btn_task.setStyleSheet(sub_btn_style)
-        self.btn_note.setStyleSheet(sub_btn_style)
+        self.btn_task.setStyleSheet(task_btn_style)
+        self.btn_note.setStyleSheet(note_btn_style)
         self.update()
         
     def toggle_expand(self):
@@ -1530,7 +1591,8 @@ class MainWindow(QWidget):
         """Callback when the Spotify music icon is clicked in the toolbar."""
         from utils import config
         client_id, client_secret = config.load_spotify_credentials()
-        is_linked = bool(client_id and client_secret) or config.load_spotify_demo_mode()
+        backend_mode = config.load_spotify_backend_mode("gsmtc")
+        is_linked = (backend_mode == "gsmtc") or bool(client_id and client_secret) or config.load_spotify_demo_mode()
         
         if not is_linked:
             # Open settings and switch to Spotify category

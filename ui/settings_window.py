@@ -1837,7 +1837,7 @@ class SettingsWindow(QWidget):
                 "Create API Key",
                 "Available models:<br>"
                 "<b>Reasoning:</b> qwen-qwq-32b, qwen3-32b<br>"
-                "<b>Text-to-Text:</b> llama-3.3-70b-versatile, llama-4-scout-17b-16e-instruct, meta-llama/llama-4-maverick-17b-128e-instruct"
+                "<b>Text-to-Text:</b> openai/gpt-oss-120b, llama-3.3-70b-versatile, llama-4-scout-17b-16e-instruct, meta-llama/llama-4-maverick-17b-128e-instruct"
             ),
             "OpenRouter": (
                 "https://openrouter.ai/keys",
@@ -1867,7 +1867,7 @@ class SettingsWindow(QWidget):
                 "Gemini": "gemini-1.5-flash",
                 "OpenAI": "gpt-4o-mini",
                 "Claude": "claude-3-5-sonnet-20241022",
-                "Groq": "llama-3.3-70b-versatile",
+                "Groq": "openai/gpt-oss-120b",
                 "OpenRouter": "meta-llama/llama-3-8b-instruct:free"
             }
             self.input_ai_model.setText(defaults.get(provider_name, "gemini-1.5-flash"))
@@ -1968,7 +1968,7 @@ class SettingsWindow(QWidget):
         
     def show_centered(self):
         from PySide6.QtWidgets import QApplication
-        self.selected_font = config.load_font_family("Inter")
+        self.selected_font = config.load_font_family("DM Sans")
         theme.update_font_theme(self.selected_font)
         for btn in self.font_buttons:
             is_active = btn.text().lower() == self.selected_font.lower()

@@ -40,7 +40,7 @@ def save_always_on_top(value):
     """Save the always_on_top boolean setting."""
     save_config({"always_on_top": value})
 
-def load_accent_color(default_hex="#FF9F0A"):
+def load_accent_color(default_hex="#0A84FF"):
     """Load the accent color hex value."""
     return load_config().get("accent_color", default_hex)
 
@@ -120,7 +120,7 @@ def save_spotify_backend_mode(value):
     """Save Spotify backend mode ('gsmtc' or 'api')."""
     save_config({"spotify_backend_mode": value})
 
-def load_theme(default_value="Obsidian"):
+def load_theme(default_value="Amoled Pure"):
     """Load the selected UI color theme name."""
     return load_config().get("ui_theme", default_value)
 
@@ -130,13 +130,16 @@ def save_theme(value):
 
 def load_tasks():
     """Load the list of active tasks."""
-    return load_config().get("tasks", [])
+    tasks = load_config().get("tasks")
+    if tasks is None or tasks == ["Ticky!"]:
+        return ["Explore Ticky!"]
+    return tasks
 
 def save_tasks(tasks_list):
     """Save the list of active tasks."""
     save_config({"tasks": tasks_list})
 
-def load_font_family(default_value="Inter"):
+def load_font_family(default_value="DM Sans"):
     """Load the selected font family."""
     return load_config().get("font_family", default_value)
 

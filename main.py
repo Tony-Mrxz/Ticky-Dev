@@ -53,7 +53,7 @@ def main():
     
     # Set default app font with antialiasing and quality hints
     from utils import config
-    saved_font = config.load_font_family("Inter")
+    saved_font = config.load_font_family("DM Sans")
     app_font = QFont(saved_font)
     app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.PreferQuality)
     app_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)

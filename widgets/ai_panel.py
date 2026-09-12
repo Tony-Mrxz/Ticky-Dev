@@ -88,7 +88,7 @@ class AIWorker(QThread):
             elif provider == "claude":
                 model = "claude-3-5-sonnet-20241022"
             elif provider == "groq":
-                model = "llama-3.3-70b-versatile"
+                model = "openai/gpt-oss-120b"
             elif provider == "openrouter":
                 model = "meta-llama/llama-3-8b-instruct:free"
             else:

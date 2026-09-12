@@ -56,8 +56,8 @@ THEMES = {
 # Active background / surface colors — initialised from saved theme
 # ---------------------------------------------------------------------------
 def _load_initial_theme():
-    name = config.load_theme("Obsidian")
-    return THEMES.get(name, THEMES["Obsidian"]), name
+    name = config.load_theme("Amoled Pure")
+    return THEMES.get(name, THEMES["Amoled Pure"]), name
 
 _initial_theme, _initial_name = _load_initial_theme()
 
@@ -69,7 +69,7 @@ BORDER_COLOR    = _initial_theme["border"]
 SELECTED_THEME  = _initial_name
 
 # Accent & semantic colors (independent of theme)
-ACCENT_COLOR    = config.load_accent_color("#FF9F0A")
+ACCENT_COLOR    = config.load_accent_color("#0A84FF")
 SUCCESS_COLOR   = "#45D483"
 TEXT_PRIMARY    = "#F2F4F8"
 TEXT_SECONDARY  = "#9AA3B2"
@@ -90,7 +90,7 @@ RAINBOW_COLORS = [
 def apply_theme(theme_name: str):
     """Switch all background/surface globals to the selected theme at runtime."""
     global BG_COLOR, MAIN_CARD_COLOR, SEC_CARD_COLOR, HOVER_COLOR, BORDER_COLOR, SELECTED_THEME
-    t = THEMES.get(theme_name, THEMES["Obsidian"])
+    t = THEMES.get(theme_name, THEMES["Amoled Pure"])
     BG_COLOR        = t["bg"]
     MAIN_CARD_COLOR = t["main_card"]
     SEC_CARD_COLOR  = t["sec_card"]
@@ -103,7 +103,7 @@ def apply_theme(theme_name: str):
 # ---------------------------------------------------------------------------
 # Typography
 # ---------------------------------------------------------------------------
-SELECTED_FONT       = config.load_font_family("Inter")
+SELECTED_FONT       = config.load_font_family("DM Sans")
 FONT_FAMILY         = f"{SELECTED_FONT}, Segoe UI Variable Display, Segoe UI, sans-serif"
 HEADER_FONT_FAMILY  = f"{SELECTED_FONT}, Space Grotesk, sans-serif"
 

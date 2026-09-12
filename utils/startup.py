@@ -15,9 +15,14 @@ def set_startup(enabled):
         # Compiled executable mode (PyInstaller EXE)
         cmd = f'"{sys.executable}"'
     else:
-        # Python script mode (.py) - must include python interpreter
+        # Python script mode (.py) - use pythonw.exe to prevent console window popup
+        py_exec = sys.executable
+        if py_exec.lower().endswith("python.exe"):
+            pyw_exec = py_exec[:-10] + "pythonw.exe"
+            if os.path.exists(pyw_exec):
+                py_exec = pyw_exec
         script_path = os.path.abspath(sys.argv[0])
-        cmd = f'"{sys.executable}" "{script_path}"'
+        cmd = f'"{py_exec}" "{script_path}"'
         
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
     try:

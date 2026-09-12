@@ -1,10 +1,76 @@
 # widgets/notepad_widgets.py
 """Grid squares and maximized text editor widgets for the Mini Notepad feature."""
 
-from PySide6.QtCore import Qt, Signal, QSize, QTimer, QByteArray, QPropertyAnimation, QEasingCurve
+import re
+import html
+from PySide6.QtCore import Qt, Signal, QSize, QTimer, QByteArray, QPropertyAnimation, QEasingCurve, QUrl
 from PySide6.QtWidgets import QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QApplication, QGraphicsOpacityEffect
-from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPixmap, QIcon
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPixmap, QIcon, QSyntaxHighlighter, QTextCharFormat, QDesktopServices
 from styles import theme
+
+URL_REGEX = re.compile(r'(?:https?://|www\.)[^\s<>"{}|\\^`\[\]()]+(?:\([^\s<>]+\)|[^\s<>"{}|\\^`\[\]().,;:!?])')
+
+class NoteUrlHighlighter(QSyntaxHighlighter):
+    def __init__(self, document):
+        super().__init__(document)
+
+    def highlightBlock(self, text):
+        if not text:
+            return
+        
+        link_format = QTextCharFormat()
+        accent_hex = theme.ACCENT_COLOR if theme and hasattr(theme, 'ACCENT_COLOR') else "#0A84FF"
+        link_format.setForeground(QColor(accent_hex))
+        link_format.setFontUnderline(True)
+
+        for match in URL_REGEX.finditer(text):
+            start = match.start()
+            length = match.end() - start
+            self.setFormat(start, length, link_format)
+
+
+class NoteTextEdit(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.highlighter = NoteUrlHighlighter(self.document())
+        self._pressed_pos = None
+
+    def _get_url_at_pos(self, pos):
+        cursor = self.cursorForPosition(pos)
+        block_text = cursor.block().text()
+        pos_in_block = cursor.positionInBlock()
+
+        for match in URL_REGEX.finditer(block_text):
+            if match.start() <= pos_in_block <= match.end():
+                return match.group()
+        return None
+
+    def mouseMoveEvent(self, event):
+        url = self._get_url_at_pos(event.pos())
+        if url:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip(f"Click to open {url}")
+        else:
+            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+            self.setToolTip("")
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._pressed_pos = event.pos()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._pressed_pos:
+            dist = (event.pos() - self._pressed_pos).manhattanLength()
+            if dist < 4:
+                url_str = self._get_url_at_pos(event.pos())
+                if url_str:
+                    full_url = url_str if url_str.startswith(("http://", "https://")) else "https://" + url_str
+                    QDesktopServices.openUrl(QUrl(full_url))
+        self._pressed_pos = None
+        super().mouseReleaseEvent(event)
 
 class CopyShortcutButton(QPushButton):
     COPY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="COLOR" viewBox="0 0 24 24">
@@ -60,11 +126,19 @@ class NoteSquareWidget(QFrame):
         
         # Truncate text preview for label
         preview_text = text if len(text) <= 75 else text[:72] + "..."
+        escaped_preview = html.escape(preview_text)
+        accent_hex = theme.ACCENT_COLOR if theme and hasattr(theme, 'ACCENT_COLOR') else "#0A84FF"
+        formatted_preview = URL_REGEX.sub(
+            lambda m: f'<a href="{m.group()}" style="color: {accent_hex}; text-decoration: underline;">{m.group()}</a>',
+            escaped_preview
+        )
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         
-        self.lbl = QLabel(preview_text, self)
+        self.lbl = QLabel(formatted_preview, self)
+        self.lbl.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl.setOpenExternalLinks(True)
         self.lbl.setWordWrap(True)
         self.lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.lbl)
@@ -198,7 +272,7 @@ class MaximizedNoteWidget(QWidget):
         card_layout.addLayout(top_bar)
         
         # 2. Text Editor (Fills full height of card frame)
-        self.text_edit = QTextEdit(self.card_frame)
+        self.text_edit = NoteTextEdit(self.card_frame)
         self.text_edit.setPlaceholderText("Type your note here...")
         self.text_edit.setText(text)
         self.text_edit.textChanged.connect(self.on_text_changed)

@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QRectF, QByteArray, QTimer
-from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel, QLineEdit
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel, QLineEdit, QGraphicsOpacityEffect
 from PySide6.QtGui import QPainter, QColor, QFont, QPen
 from PySide6.QtSvg import QSvgRenderer
 from styles import theme, qss
@@ -9,11 +9,11 @@ TIMER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fi
 
 POMODORO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M19.07 4.93a9.9 9.9 0 0 0-3.18-2.14A9.95 9.95 0 0 0 12 2c-.55 0-1 .45-1 1v5h2V4.06c.73.09 1.44.28 2.11.57.95.4 1.81.98 2.54 1.72.74.73 1.31 1.59 1.71 2.54.42.99.63 2.03.63 3.11s-.21 2.13-.63 3.11c-.4.95-.98 1.81-1.72 2.54-.73.74-1.59 1.31-2.54 1.71-1.97.83-4.26.83-6.23 0-.95-.4-1.81-.98-2.54-1.72a7.8 7.8 0 0 1-1.71-2.54c-.42-.99-.63-2.03-.63-3.11s.21-2.13.63-3.11c.4-.95.98-1.81 1.72-2.54L4.93 4.92c-.92.92-1.64 1.99-2.14 3.18C2.27 9.33 2 10.64 2 11.99s.26 2.66.79 3.89c.5 1.19 1.23 2.26 2.14 3.18s1.99 1.64 3.18 2.14c1.23.52 2.54.79 3.89.79s2.66-.26 3.89-.79c1.19-.5 2.26-1.23 3.18-2.14s1.64-1.99 2.14-3.18c.52-1.23.79-2.54.79-3.89s-.26-2.66-.79-3.89c-.5-1.19-1.23-2.26-2.14-3.18Z"></path><path d="M12.88 11.12 8 8l3.12 4.88c1.22 1.68 3.45-.55 1.77-1.77Z"></path></svg>"""
 
-SPOTIFY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M12.01 2.019c-5.495 0-9.991 4.496-9.991 9.991S6.515 22 12.01 22 22 17.504 22 12.01c0-5.495-4.446-9.991-9.99-9.991m4.595 14.436c-.199.299-.549.4-.85.201-2.349-1.45-5.296-1.75-8.793-.951-.348.102-.648-.148-.748-.449-.101-.35.149-.648.45-.749 3.795-.85 7.093-.499 9.69 1.1.35.149.4.548.251.848m1.2-2.747c-.251.349-.7.499-1.051.249-2.697-1.646-6.792-2.148-9.939-1.148-.398.101-.85-.1-.949-.498-.101-.402.1-.852.499-.952 3.646-1.098 8.143-.548 11.239 1.351.3.149.45.648.201.998m.099-2.799c-3.197-1.897-8.542-2.097-11.59-1.146a.94.94 0 0 1-1.148-.6.937.937 0 0 1 .599-1.151c3.547-1.049 9.392-.85 13.089 1.351.449.249.599.849.349 1.298-.25.35-.849.498-1.299.248"></path></svg>"""
+SPOTIFY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M17.68 5.47H22V8h-4.32zm0 3.51H22v2.53h-4.32zm0 3.51H22v2.53h-4.32zM2 16h4.32v2.53H2zm5.22 0h4.32v2.53H7.22zm5.23 0h4.32v2.53h-4.32zm5.23 0H22v2.53h-4.32zm-5.23-3.51h4.32v2.53h-4.32zm-5.23 0h4.32v2.53H7.22zm0-3.51h4.32v2.53H7.22z"></path></svg>"""
 
-SETTINGS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M22 12.5v-1h-1.03c-.04-.78-.18-1.54-.41-2.26l.95-.37-.36-.93-.95.37c-.38-.85-.89-1.62-1.5-2.3l.73-.73-.71-.71-.73.73c-.57-.51-1.2-.95-1.89-1.3l.42-.93-.91-.41-.42.94a8.9 8.9 0 0 0-2.69-.57V2h-1v1.03c-.78.04-1.54.18-2.26.41l-.37-.95-.93.36.37.95c-.85.38-1.62.89-2.3 1.5l-.73-.73-.71.71.73.73c-.51.57-.95 1.2-1.3 1.89l-.93-.42-.41.91.94.42a8.9 8.9 0 0 0-.57 2.69H2v1h1.03c.04.78.18 1.54.41 2.26l-.95.37.36.93.95-.37c.38.85.89 1.62 1.5 2.3l-.73.73.71.71.73-.73c.57.51-1.2.95 1.89 1.3l-.42.93.91.41.42-.94a8.9 8.9 0 0 0 2.69.57V22h1v-1.03c.78-.04 1.54-.18 2.26-.41l.37.95.93-.36-.37-.95c.85-.38 1.62-.89 2.3-1.5l.73.73.71-.71-.73-.73c.51-.57.95-1.2 1.3-1.89l.93.42.41-.91-.94-.42a8.9 8.9 0 0 0 .57-2.69zM12 5c3.1 0 5.72 2.02 6.65 4.81l-4.05.71c-.52-.91-1.48-1.53-2.6-1.53-.37 0-.72.08-1.05.2L8.31 6.05a6.9 6.9 0 0 1 3.68-1.06Zm1 7c0 .55-.45 1-1 1s-1-.45-1-1 .45-1 1-1 1 .45 1 1m-4.31 6.17a6.99 6.99 0 0 1-1.9-10.83l2.64 3.14c-.26.45-.42.96-.42 1.51 0 .93.43 1.75 1.1 2.3L8.7 18.15ZM12 19c-.49 0-.97-.05-1.43-.15l1.4-3.85H12a2.99 2.99 0 0 0 2.95-2.5l4.04-.71c0 .07.01.14.01.22 0 3.86-3.14 7-7 7Z"></path></svg>"""
+SETTINGS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg>"""
 
-AI_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M20 10c-.74 0-1.38.4-1.72 1H13V9h4c.55 0 1-.45 1-1V5.72c.6-.35 1-.98 1-1.72 0-1.1-.9-2-2-2s-2 .9-2 2c0 .74.4 1.38 1 1.72V7h-3V5c0-1.65-1.35-3-3-3-1.3 0-2.41.83-2.83 2.01A3.51 3.51 0 0 0 4 7.5c0 .33.05.65.14.96C2.87 9.14 2 10.49 2 12c0 1.08.43 2.09 1.17 2.83-.11.38-.17.77-.17 1.17 0 1.96 1.41 3.59 3.31 3.93C6.86 21.16 8.11 22 9.5 22c1.93 0 3.5-1.57 3.5-3.5V17h3v1.28c-.6.35-1 .98-1 1.72 0 1.1.9 2 2 2s2-.9 2-2c0-.74-.4-1.38-1-1.72V16c0-.55-.45-1-1-1h-4v-2h5.28c.35.6.98 1 1.72 1 1.1 0 2-.9 2-2s-.9-2-2-2m-9 8.5c0 .83-.67 1.5-1.5 1.5-.71 0-1.33-.5-1.47-1.2l-.21-.8H7c-1.1 0-2-.9-2-2 0-.35.08-.68.25-.98l.46-.82-.78-.51C4.35 13.31 4 12.68 4 12c0-.98.72-1.82 1.68-1.97l1.69-.26-1.06-1.35c-.2-.26-.32-.59-.32-.92 0-.83.67-1.5 1.5-1.5.11 0 .21.01.31.03l1.19.17V4.99c0-.55.45-1 1-1s1 .45 1 1v13.5Z"></path></svg>"""
+AI_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M20.57 10.18c.45-1.36.3-2.85-.43-4.09a5.03 5.03 0 0 0-5.42-2.42 5.05 5.05 0 0 0-7.14-.38c-.66.59-1.15 1.35-1.43 2.19A4.98 4.98 0 0 0 2.82 7.9c-1.1 1.9-.85 4.29.62 5.91-.45 1.36-.3 2.85.43 4.09a5.045 5.045 0 0 0 5.43 2.42A5.03 5.03 0 0 0 13.06 22c2.19 0 4.14-1.41 4.81-3.5a4.98 4.98 0 0 0 3.33-2.42 5.04 5.04 0 0 0-.62-5.89Zm-7.52 10.51c-.88 0-1.72-.31-2.4-.87l.12-.07 3.98-2.3c.2-.12.33-.33.33-.57v-5.61l1.68.97s.03.02.03.04v4.65c0 2.07-1.68 3.74-3.75 3.75ZM5 17.25c-.44-.76-.6-1.65-.45-2.51l.12.07 3.99 2.3c.2.12.45.12.65 0l4.87-2.81v1.94s-.01.04-.03.05l-4.03 2.33A3.756 3.756 0 0 1 5 17.25M3.95 8.58a3.7 3.7 0 0 1 1.97-1.64v4.73c0 .23.12.45.32.56l4.85 2.8-1.68.97h-.06l-4.03-2.32a3.754 3.754 0 0 1-1.37-5.12zm13.83 3.21-4.86-2.82L14.6 8h.06l4.03 2.33a3.743 3.743 0 0 1 1.37 5.12 3.8 3.8 0 0 1-1.94 1.64v-4.73a.67.67 0 0 0-.34-.56Zm1.68-2.52-.12-.07-3.98-2.32a.63.63 0 0 0-.65 0L9.84 9.69V7.75s0-.04.02-.05l4.03-2.32a3.75 3.75 0 0 1 5.12 1.38c.44.76.59 1.64.45 2.51v.02ZM8.93 12.72l-1.68-.97s-.03-.03-.03-.05V7.06c0-2.07 1.68-3.75 3.75-3.74.87 0 1.72.31 2.39.87l-.12.07-3.98 2.3c-.2.12-.33.33-.33.57v5.6Zm.91-1.97 2.17-1.25 2.17 1.25v2.5l-2.16 1.25-2.17-1.25v-2.5Z"></path></svg>"""
 
 PLAY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg>"""
 
@@ -33,6 +33,7 @@ class ToolbarButton(QPushButton):
         self.setToolTip(tooltip_text)
             
         self._hover_progress = 0.0
+        self._icon_angle = 0.0
         self._active = False
         self.hover_anim = QPropertyAnimation(self, b"hover_progress", self)
         self.hover_anim.setDuration(180) # Smooth, slightly longer transitions
@@ -60,6 +61,15 @@ class ToolbarButton(QPushButton):
     @hover_progress.setter
     def hover_progress(self, val):
         self._hover_progress = val
+        self.update()
+
+    @Property(float)
+    def icon_angle(self):
+        return getattr(self, '_icon_angle', 0.0)
+
+    @icon_angle.setter
+    def icon_angle(self, val):
+        self._icon_angle = val
         self.update()
 
     def enterEvent(self, event):
@@ -128,7 +138,19 @@ class ToolbarButton(QPushButton):
         iy = float(rect.y()) + (float(rect.height()) - icon_size) / 2.0
         icon_rect = QRectF(ix, iy, icon_size, icon_size)
         
-        renderer.render(painter, icon_rect)
+        angle = getattr(self, '_icon_angle', 0.0)
+        if angle != 0.0:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            cx = float(icon_rect.x()) + float(icon_rect.width()) / 2.0
+            cy = float(icon_rect.y()) + float(icon_rect.height()) / 2.0
+            painter.translate(cx, cy)
+            painter.rotate(angle)
+            half = float(icon_rect.width()) / 2.0
+            renderer.render(painter, QRectF(-half, -half, icon_rect.width(), icon_rect.height()))
+            painter.restore()
+        else:
+            renderer.render(painter, icon_rect)
 
 
 class StopwatchContainer(QWidget):
@@ -156,6 +178,19 @@ class StopwatchContainer(QWidget):
         self.lbl_time.setReadOnly(True)
         self.lbl_time.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         
+        self.opacity_play = QGraphicsOpacityEffect(self.btn_play_stop)
+        self.btn_play_stop.setGraphicsEffect(self.opacity_play)
+        
+        self.opacity_restart = QGraphicsOpacityEffect(self.btn_restart)
+        self.btn_restart.setGraphicsEffect(self.opacity_restart)
+        
+        self.opacity_lbl = QGraphicsOpacityEffect(self.lbl_time)
+        self.lbl_time.setGraphicsEffect(self.opacity_lbl)
+        
+        self.opacity_play.setOpacity(0.0)
+        self.opacity_restart.setOpacity(0.0)
+        self.opacity_lbl.setOpacity(0.0)
+        
         layout.addWidget(self.btn_play_stop)
         layout.addWidget(self.btn_restart)
         layout.addSpacing(6)
@@ -178,11 +213,18 @@ class StopwatchContainer(QWidget):
     def anim_width(self, val):
         self._anim_width = val
         self.setFixedWidth(val)
-        # Show/hide children based on layout space
-        has_space = val > 40
-        self.btn_play_stop.setVisible(has_space)
-        self.btn_restart.setVisible(has_space)
-        self.lbl_time.setVisible(has_space)
+        
+        progress = max(0.0, min(1.0, val / 144.0))
+        show_widgets = val > 0
+        self.btn_play_stop.setVisible(show_widgets)
+        self.btn_restart.setVisible(show_widgets)
+        self.lbl_time.setVisible(show_widgets)
+        
+        if hasattr(self, 'opacity_play') and self.opacity_play:
+            fade = progress * progress  # Smooth acceleration
+            self.opacity_play.setOpacity(fade)
+            self.opacity_restart.setOpacity(fade)
+            self.opacity_lbl.setOpacity(fade)
 
     def set_mode(self, mode):
         self.mode = mode
@@ -290,6 +332,10 @@ class FloatingToolbar(QWidget):
         self.toolbar_max_anim = QPropertyAnimation(self, b"maximumWidth", self)
         self.toolbar_max_anim.setDuration(300)
         self.toolbar_max_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self.timer_icon_anim = QPropertyAnimation(self.btn_timer, b"icon_angle", self)
+        self.timer_icon_anim.setDuration(300)
+        self.timer_icon_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
     def handle_timer_wheel(self, delta):
         if delta == 0:
@@ -325,6 +371,7 @@ class FloatingToolbar(QWidget):
         self.stopwatch_anim.stop()
         self.toolbar_min_anim.stop()
         self.toolbar_max_anim.stop()
+        self.timer_icon_anim.stop()
         
         if not self.is_stopwatch_active:
             # Expand to 318px
@@ -336,9 +383,13 @@ class FloatingToolbar(QWidget):
             self.toolbar_max_anim.setStartValue(self.width())
             self.toolbar_max_anim.setEndValue(318)
             
+            self.timer_icon_anim.setStartValue(self.btn_timer.icon_angle)
+            self.timer_icon_anim.setEndValue(180.0)
+            
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()
             self.toolbar_max_anim.start()
+            self.timer_icon_anim.start()
             
             # Reset timer running state when opening (do not start automatically)
             self.is_timer_running = False
@@ -369,9 +420,13 @@ class FloatingToolbar(QWidget):
             self.toolbar_max_anim.setStartValue(self.width())
             self.toolbar_max_anim.setEndValue(174)
             
+            self.timer_icon_anim.setStartValue(self.btn_timer.icon_angle)
+            self.timer_icon_anim.setEndValue(360.0 if self.btn_timer.icon_angle > 90 else 0.0)
+            
             self.stopwatch_anim.start()
             self.toolbar_min_anim.start()
             self.toolbar_max_anim.start()
+            self.timer_icon_anim.start()
             
             # Stop timer when collapsed
             self.stopwatch_timer.stop()
