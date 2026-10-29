@@ -9,3 +9,6 @@ generate_ico.py
 dist/Ticky/
 models/
 installer/output/
+
+# Marketing site lives in its own repo (Ticky-The-desktop-companion)
+ticky-web/
