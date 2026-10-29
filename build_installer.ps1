@@ -85,17 +85,26 @@ if ($SkipModel) {
             Copy-Item -LiteralPath $hfCache -Destination $modelTarget -Recurse -Force
         } else {
             Write-Host "  not in the local HF cache - downloading" -ForegroundColor Yellow
+            # Runners have no developer mode, so ask for plain copies rather than
+            # letting the snapshot dir depend on link support we cannot see.
+            $env:HF_HUB_DISABLE_SYMLINKS = "1"
             & $Python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-base.en', cache_dir='models/whisper')"
             if ($LASTEXITCODE -ne 0) { throw "Model download failed" }
         }
     }
-    # A snapshot dir can hold links; the bundle needs real bytes next to the exe.
-    $modelBin = Get-ChildItem -Path (Join-Path $modelTarget "snapshots") -Recurse -Filter "model.bin" |
-                Select-Object -First 1
-    if (-not $modelBin -or $modelBin.Length -lt 100MB) {
-        throw "Bundled model looks incomplete at $modelTarget (no model.bin over 100 MB)."
+    # Ticky.spec copies models\whisper wholesale and the app reads it back through
+    # snapshot_download, so any cache layout is fine as long as the weights are
+    # real bytes somewhere under the staging dir - report the tree when they are not.
+    $modelBins = @(Get-ChildItem -Path $modelStage -Recurse -File -Filter "model.bin" -ErrorAction SilentlyContinue |
+                   Sort-Object Length -Descending)
+    if ($modelBins.Count -eq 0 -or $modelBins[0].Length -lt 100MB) {
+        Write-Host "  what the staging dir actually holds:" -ForegroundColor Yellow
+        Get-ChildItem -Path $modelStage -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host ("    {0,13:N0} B  {1}" -f $_.Length, $_.FullName.Substring($PSScriptRoot.Length + 1))
+        }
+        throw "No model.bin over 100 MB under $modelStage - the speech weights did not land as real files."
     }
-    Write-Host ("  {0:N0} MB ready" -f ($modelBin.Length / 1MB))
+    Write-Host ("  {0:N0} MB ready" -f ($modelBins[0].Length / 1MB))
 }
 
 # --- application bundle ------------------------------------------------------
