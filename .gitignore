@@ -12,3 +12,6 @@ installer/output/
 
 # Marketing site lives in its own repo (Ticky-The-desktop-companion)
 ticky-web/
+
+# Disposable verification harnesses and their renders
+scratch/

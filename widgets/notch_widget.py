@@ -215,7 +215,7 @@ class NotchWidget(QWidget):
 
         # Tasks list expanded state (clicking task card in notch expands to show all tasks)
         self.tasks_in_notch = False
-        self.notch_task_page = 0             # current page (3 tasks per page)
+        self.notch_task_scroll = 0.0        # pixel offset into the tasks list
         self.notch_task_rects = []           # list of (QRect, idx, task_text)
         self.notch_task_cb_rects = []        # list of (QRect, idx, task_text) for checkboxes only
         self.notch_task_play_rects = []      # list of (QRect, idx, task_text) for play buttons
@@ -1068,7 +1068,7 @@ class NotchWidget(QWidget):
         # 3. Exit Tasks List mode
         if getattr(self, "tasks_in_notch", False) and entering_mode != "tasks":
             self.tasks_in_notch = False
-            self.notch_task_page = 0
+            self.notch_task_scroll = 0.0
             self.notch_task_rects = []
             self.notch_task_cb_rects = []
             self.notch_task_play_rects = []
@@ -1512,6 +1512,86 @@ class NotchWidget(QWidget):
         if getattr(self, "reminders_in_notch", False):
             self.update_reminder_geometry()
 
+    def _suspend_reminders_list_for_creation(self):
+        """Hide the reminders list child while a task/note editor owns the extended area."""
+        if getattr(self, "reminders_in_notch", False) and not getattr(self, "is_creating_reminder", False) \
+                and not getattr(self, "empty_reminders_showing", False):
+            self._reminders_list_suspended = True
+            if hasattr(self, "reminder_widget") and self.reminder_widget:
+                self.reminder_widget.hide()
+
+    def _restore_reminders_list(self):
+        """Put the reminders list back after a creation flow opened over it."""
+        if not getattr(self, "_reminders_list_suspended", False):
+            return
+        self._reminders_list_suspended = False
+        if not getattr(self, "reminders_in_notch", False) or getattr(self, "is_creating_reminder", False) \
+                or getattr(self, "empty_reminders_showing", False):
+            return
+        if hasattr(self, "reminder_widget") and self.reminder_widget:
+            self.reminder_widget.show()
+            self.reminder_widget.show_list()
+        self.update_reminder_geometry()
+
+    def _open_list_stage_size(self):
+        """Size of an open tasks/reminders list when the add capsule overlays the header row.
+
+        Returns None when no list stage needs its height preserved.
+        """
+        if getattr(self, "reminders_in_notch", False) and not getattr(self, "is_creating_reminder", False):
+            if getattr(self, "empty_reminders_showing", False):
+                # Keep the "No reminders available" line visible under the capsule
+                return (max(self.calc_add_expanded_width(), self.calc_expanded_width()), 84)
+            return (max(self.calc_add_expanded_width(), self.calc_expanded_width(), 380),
+                    self._calc_reminders_notch_height())
+        if self.tasks_in_notch and not (self.is_creating_task or self.is_creating_note):
+            return (max(self.calc_add_expanded_width(), self.calc_expanded_width(), 380),
+                    self._calc_tasks_notch_height())
+        return None
+
+    def _route_add_click(self, pos):
+        """Handle a click on the add button or the expanded capsule. True when consumed."""
+        if self.add_expanded:
+            if self.add_toggle_rect.contains(pos):
+                self.collapse_add_mode()
+                return True
+            if self.sub_task_rect.contains(pos):
+                self.start_notch_task_creation()
+                return True
+            if self.sub_note_rect.contains(pos):
+                self.start_notch_note_creation()
+                return True
+            if self.sub_reminder_rect.contains(pos):
+                self.start_notch_reminder_creation()
+                return True
+            return False
+        if self.add_btn_rect.contains(pos):
+            self.expand_add_mode()
+            return True
+        return False
+
+    def _add_capsule_hover(self, pos):
+        """Hover flags for the add button and its capsule; True when a control is under the cursor."""
+        if not self.add_expanded:
+            in_add = self.add_btn_rect.contains(pos)
+            if in_add != self.hover_add_btn:
+                self.hover_add_btn = in_add
+                self.update()
+            return in_add
+
+        new_sub_task = self.sub_task_rect.contains(pos)
+        new_sub_note = self.sub_note_rect.contains(pos)
+        new_sub_reminder = self.sub_reminder_rect.contains(pos)
+        new_toggle = self.add_toggle_rect.contains(pos)
+        if (new_sub_task != self.hover_sub_task or new_sub_note != self.hover_sub_note or
+                new_sub_reminder != self.hover_sub_reminder or new_toggle != self.hover_add_btn):
+            self.hover_sub_task = new_sub_task
+            self.hover_sub_note = new_sub_note
+            self.hover_sub_reminder = new_sub_reminder
+            self.hover_add_btn = new_toggle
+            self.update()
+        return new_sub_task or new_sub_note or new_sub_reminder or new_toggle
+
     def expand_add_mode(self):
         self.unhover_collapse_timer.stop()
         self.add_expanded = True
@@ -1519,6 +1599,10 @@ class NotchWidget(QWidget):
         self.add_expand_anim.setStartValue(self._add_expand_progress)
         self.add_expand_anim.setEndValue(1.0)
         self.add_expand_anim.start()
+        stage = None if self.timer_in_notch else self._open_list_stage_size()
+        if stage:
+            self.animate_to(stage[0], stage[1])
+            return
         target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_add_expanded_width()
         self.animate_to(target_w, self.expanded_row_height())
 
@@ -1544,13 +1628,21 @@ class NotchWidget(QWidget):
         self.add_expand_anim.setStartValue(self._add_expand_progress)
         self.add_expand_anim.setEndValue(0.0)
         self.add_expand_anim.start()
-        target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-        self.animate_to(target_w, self.expanded_row_height())
+        self._restore_reminders_list()
+        stage = None if self.timer_in_notch else self._open_list_stage_size()
+        if stage:
+            # Back to the list the capsule was opened over; show the newest rows first
+            self.notch_task_scroll = 0.0
+            self.animate_to(stage[0], stage[1])
+        else:
+            target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
+            self.animate_to(target_w, self.expanded_row_height())
         self._resume_suspended_media()
 
     def start_notch_task_creation(self):
         self.unhover_collapse_timer.stop()
         self._suspend_media_for_creation()
+        self._suspend_reminders_list_for_creation()
         self.is_creating_task = True
         self.is_creating_note = False
         self.notes_in_notch = False
@@ -1587,6 +1679,7 @@ class NotchWidget(QWidget):
         """Expand notch vertically and horizontally for inline note creation with combined tick/cross pill."""
         self.unhover_collapse_timer.stop()
         self._suspend_media_for_creation()
+        self._suspend_reminders_list_for_creation()
         self.is_creating_task = False
         self.is_creating_note = True
         self.editing_note_index = None
@@ -1725,34 +1818,54 @@ class NotchWidget(QWidget):
         self.show_notes_in_notch()
 
     # Fixed layout constants for tasks-in-notch
-    TASKS_PER_PAGE = 3
+    TASK_VISIBLE_ROWS = 3
     TASK_ITEM_H = 38.0
     TASK_GAP = 6.0
     TASK_EXT_TOP = 58.0
+    TASK_ROW_TOP = TASK_EXT_TOP + 5.0
+
+    def _tasks_pitch(self):
+        return self.TASK_ITEM_H + self.TASK_GAP
+
+    def _tasks_viewport_height(self):
+        """Height of the always-visible scroll window — exactly TASK_VISIBLE_ROWS rows."""
+        n = self.TASK_VISIBLE_ROWS
+        return n * self.TASK_ITEM_H + (n - 1) * self.TASK_GAP
+
+    def _tasks_content_height(self, count):
+        if count <= 0:
+            return 0.0
+        return count * self.TASK_ITEM_H + (count - 1) * self.TASK_GAP
+
+    def _tasks_max_scroll(self, all_tasks=None):
+        if all_tasks is None:
+            all_tasks = self._get_tasks_list()
+        return max(0.0, self._tasks_content_height(len(all_tasks)) - self._tasks_viewport_height())
 
     def _calc_tasks_notch_height(self, all_tasks=None):
-        """Calculates dynamic height of the notch based on the number of tasks on current page."""
+        """Notch height for the tasks stage — fixed at three visible rows, extras scroll."""
         if all_tasks is None:
             all_tasks = self._get_tasks_list()
         if not all_tasks:
             return int(self.TASK_EXT_TOP + 42.0)
-        n = self.TASKS_PER_PAGE
-        num_pages = max(1, (len(all_tasks) + n - 1) // n)
-        self.notch_task_page = max(0, min(self.notch_task_page, num_pages - 1))
-        start_idx = self.notch_task_page * n
-        page_tasks = all_tasks[start_idx:start_idx + n]
-        k = max(1, len(page_tasks))
-        last_row_bottom = self.TASK_EXT_TOP + 5.0 + k * self.TASK_ITEM_H + (k - 1) * self.TASK_GAP
-        bottom_pad = 18.0 if num_pages > 1 else 13.0
-        return int(last_row_bottom + bottom_pad)
+        return int(self.TASK_ROW_TOP + self._tasks_viewport_height() + 14.0)
 
     def _update_tasks_notch_geometry(self, all_tasks=None):
         target_h = self._calc_tasks_notch_height(all_tasks)
         target_w = max(self.calc_expanded_width(), 380)
         self.animate_to(target_w, target_h)
 
+    def _scroll_tasks_notch(self, delta_px):
+        """Slide the tasks list by delta_px; positive scrolls toward the older tasks below."""
+        max_scroll = self._tasks_max_scroll()
+        new_scroll = max(0.0, min(max_scroll, self.notch_task_scroll + delta_px))
+        if abs(new_scroll - self.notch_task_scroll) < 0.01:
+            return
+        self.notch_task_scroll = new_scroll
+        self.update()
+
     def show_tasks_in_notch(self):
-        """Expands notch to show tasks below the header, sized dynamically to the number of tasks."""
+        """Expands notch to show tasks below the header in a fixed three-row window; extra tasks scroll."""
         self._exit_conflicting_modes("tasks")
         self.unhover_collapse_timer.stop()
         self.is_creating_task = False
@@ -1762,7 +1875,7 @@ class NotchWidget(QWidget):
         self._is_hovered = True
         self.cancel_idle_animations()
         self.tasks_in_notch = True
-        self.notch_task_page = 0
+        self.notch_task_scroll = 0.0
         self.notch_task_rects = []
         self.notch_task_cb_rects = []
         self.hovered_task_idx = None
@@ -1775,21 +1888,6 @@ class NotchWidget(QWidget):
             self.sub_pill.show()
             self.sub_pill.recenter_under_notch()
         self.update()
-
-    def _next_tasks_page(self):
-        all_tasks = self._get_tasks_list()
-        num_pages = max(1, (len(all_tasks) + self.TASKS_PER_PAGE - 1) // self.TASKS_PER_PAGE)
-        if self.notch_task_page < num_pages - 1:
-            self.notch_task_page += 1
-            self._update_tasks_notch_geometry(all_tasks)
-            self.update()
-
-    def _prev_tasks_page(self):
-        if self.notch_task_page > 0:
-            self.notch_task_page -= 1
-            all_tasks = self._get_tasks_list()
-            self._update_tasks_notch_geometry(all_tasks)
-            self.update()
 
     def _get_tasks_list(self):
         if self.main_window and hasattr(self.main_window, "tasks"):
@@ -1933,6 +2031,7 @@ class NotchWidget(QWidget):
         self.task_input_edit.hide()
         self.note_input_edit.hide()
         self.add_expanded = False
+        self._reminders_list_suspended = False
 
         self.reminders_in_notch = True
         self._is_hovered = True
@@ -2027,6 +2126,7 @@ class NotchWidget(QWidget):
 
         base_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
         self.reminders_in_notch = True
+        self._reminders_list_suspended = False
         self._is_hovered = True
 
         all_reminders = config.load_reminders()
@@ -3211,7 +3311,7 @@ class NotchWidget(QWidget):
             return
         if not force and getattr(self, "ai_chat_in_notch", False):
             return
-        if not force and getattr(self, "reminders_in_notch", False):
+        if not force and getattr(self, "is_creating_reminder", False):
             return
         if not force and getattr(self, "media_in_notch", False):
             return
@@ -3268,7 +3368,7 @@ class NotchWidget(QWidget):
         self.note_delete_rect = QRect()
         # Reset tasks-in-notch state
         self.tasks_in_notch = False
-        self.notch_task_page = 0
+        self.notch_task_scroll = 0.0
         self.notch_task_rects = []
         self.notch_task_cb_rects = []
         self.notch_task_play_rects = []
@@ -3296,6 +3396,7 @@ class NotchWidget(QWidget):
         self.reminders_in_notch = False
         self.is_creating_reminder = False
         self.empty_reminders_showing = False
+        self._reminders_list_suspended = False
         if hasattr(self, "empty_reminders_restore_timer"):
             self.empty_reminders_restore_timer.stop()
         if hasattr(self, "reminder_title_edit"):
@@ -3702,11 +3803,15 @@ class NotchWidget(QWidget):
             return
 
         if self.tasks_in_notch:
-            delta = event.angleDelta().y()
-            if delta < 0:
-                self._next_tasks_page()
-            elif delta > 0:
-                self._prev_tasks_page()
+            pixels = event.pixelDelta().y()
+            if pixels:
+                self._scroll_tasks_notch(-float(pixels))
+            else:
+                angle = event.angleDelta().y()
+                if angle:
+                    # One row per wheel notch keeps the feel predictable on a mouse
+                    pitch = self._tasks_pitch()
+                    self._scroll_tasks_notch(pitch if angle < 0 else -pitch)
             event.accept()
             return
 
@@ -3833,12 +3938,6 @@ class NotchWidget(QWidget):
 
         if self.ai_chat_in_notch:
             # Keep mini AI chat open while user is interacting or viewing responses
-            if event:
-                super().leaveEvent(event)
-            return
-
-        if getattr(self, "reminders_in_notch", False):
-            # Keep reminders view open while user is interacting
             if event:
                 super().leaveEvent(event)
             return
@@ -4057,7 +4156,7 @@ class NotchWidget(QWidget):
                     self.update()
                 return
 
-            if self.tasks_in_notch:
+            if self.tasks_in_notch and not (self.is_creating_task or self.is_creating_note):
                 new_task_cb_idx = None
                 new_task_play_idx = None
                 new_task_idx = None
@@ -4075,7 +4174,9 @@ class NotchWidget(QWidget):
                         if rect.contains(pos):
                             new_task_idx = idx
                             break
-                is_hand = (new_task_cb_idx is not None or new_task_play_idx is not None or new_task_idx is not None)
+                capsule_hand = self._add_capsule_hover(pos)
+                is_hand = (new_task_cb_idx is not None or new_task_play_idx is not None
+                           or new_task_idx is not None or capsule_hand)
                 self.setCursor(Qt.CursorShape.PointingHandCursor if is_hand else Qt.CursorShape.ArrowCursor)
                 if (new_task_cb_idx != self.hovered_task_cb_idx or
                         new_task_play_idx != self.hovered_task_play_idx or
@@ -4509,9 +4610,9 @@ class NotchWidget(QWidget):
 
                 # Reminders mode click handling (passed to reminder_widget children)
                 if getattr(self, "reminders_in_notch", False):
-                    if not getattr(self, "is_creating_reminder", False) and self.add_btn_rect.contains(pos):
-                        self.start_notch_reminder_creation()
-                        return
+                    if not getattr(self, "is_creating_reminder", False):
+                        if self._route_add_click(pos):
+                            return
                     if getattr(self, "timer_in_notch", False):
                         # Timer controls stay reachable while reminders are shown
                         if self.timer_play_rect.contains(pos):
@@ -4538,7 +4639,10 @@ class NotchWidget(QWidget):
                         return
 
                 # 2. Tasks list view clicks (checkbox/play keep their own targets; the row completes)
-                if self.tasks_in_notch:
+                if self.tasks_in_notch and not self.is_creating_task:
+                    # The capsule stays reachable above the list so Add works without collapsing first
+                    if self._route_add_click(pos):
+                        return
                     # Checkbox click: complete that specific task
                     for rect, idx, text in self.notch_task_cb_rects:
                         if rect.contains(pos):
@@ -4554,6 +4658,10 @@ class NotchWidget(QWidget):
                         if rect.contains(pos):
                             self._complete_task_from_notch_list(idx, text)
                             return
+                    return
+                if self.is_creating_task:
+                    # Only the capsule is live while the creation input owns the extended area
+                    self._route_add_click(pos)
                     return
 
                 # 3. Notes Grid view clicks (copy button or note card)
@@ -6320,8 +6428,6 @@ class NotchWidget(QWidget):
                 all_tasks = self._get_tasks_list()
                 ext_top = self.TASK_EXT_TOP
                 task_item_h = self.TASK_ITEM_H
-                task_gap = self.TASK_GAP
-                n = self.TASKS_PER_PAGE
                 target_ext_h = self._calc_tasks_notch_height(all_tasks)
                 ext_progress = min(1.0, max(0.0, (h - 54.0) / max(1.0, target_ext_h - 54.0)))
                 ext_opacity = opacity * ext_progress
@@ -6345,10 +6451,12 @@ class NotchWidget(QWidget):
                         Qt.AlignmentFlag.AlignCenter, "No tasks"
                     )
                 else:
-                    num_pages = max(1, (len(all_tasks) + n - 1) // n)
-                    self.notch_task_page = max(0, min(self.notch_task_page, num_pages - 1))
-                    start_idx = self.notch_task_page * n
-                    page_tasks = all_tasks[start_idx:start_idx + n]
+                    viewport_h = self._tasks_viewport_height()
+                    max_scroll = self._tasks_max_scroll(all_tasks)
+                    self.notch_task_scroll = max(0.0, min(max_scroll, self.notch_task_scroll))
+                    row_top = self.TASK_ROW_TOP
+                    band = QRectF(0.0, row_top, w, viewport_h)
+                    pitch = self._tasks_pitch()
 
                     font_task_list = QFont()
                     font_task_list.setFamilies([font_family, "Segoe UI", "Arial", "sans-serif"])
@@ -6356,11 +6464,17 @@ class NotchWidget(QWidget):
                     font_task_list.setWeight(QFont.Weight.Medium)
                     fm_task_list = QFontMetrics(font_task_list)
 
-                    for p_i, task_text in enumerate(page_tasks):
-                        abs_idx = start_idx + p_i
-                        ty = ext_top + p_i * (task_item_h + task_gap) + 5.0
+                    painter.save()
+                    painter.setClipRect(band)
+                    for abs_idx, task_text in enumerate(all_tasks):
+                        ty = row_top + abs_idx * pitch - self.notch_task_scroll
+                        if ty + task_item_h < row_top or ty > row_top + viewport_h:
+                            continue
                         row_rect = QRectF(task_list_margin, ty, task_list_w, task_item_h)
                         row_qrect = QRect(int(task_list_margin), int(ty), int(task_list_w), int(task_item_h))
+                        row_qrect = row_qrect.intersected(band.toRect())
+                        if row_qrect.height() <= 4:
+                            continue
                         self.notch_task_rects.append((row_qrect, abs_idx, task_text))
 
                         is_row_hovered = (self.hovered_task_idx == abs_idx)
@@ -6448,21 +6562,23 @@ class NotchWidget(QWidget):
                             strike_w = fm_task_list.horizontalAdvance(elided_t) * min(1.0, cp * 1.35)
                             painter.drawLine(QPointF(text_x_t, strike_y), QPointF(text_x_t + strike_w, strike_y))
 
-                    # Pagination dots at the bottom (only when >1 page)
-                    if num_pages > 1:
-                        dot_y = h - 9.0
-                        dot_r = 2.5
-                        dot_gap = 7.0
-                        total_dots_w = num_pages * (dot_r * 2) + (num_pages - 1) * (dot_gap - dot_r * 2)
-                        dot_start_x = (w - total_dots_w) / 2.0
-                        for d_i in range(num_pages):
-                            dot_cx = dot_start_x + d_i * dot_gap
-                            is_active = (d_i == self.notch_task_page)
-                            dot_col = QColor(theme.ACCENT_COLOR if is_active else theme.TEXT_SECONDARY)
-                            dot_col.setAlphaF(ext_opacity * (1.0 if is_active else 0.45))
-                            painter.setBrush(QBrush(dot_col))
-                            painter.setPen(Qt.PenStyle.NoPen)
-                            painter.drawEllipse(QPointF(dot_cx, dot_y), dot_r if is_active else dot_r * 0.7, dot_r if is_active else dot_r * 0.7)
+                    painter.restore()
+
+                    # Slim scroll thumb on the right edge (only when the list overflows)
+                    if max_scroll > 0.0:
+                        track_top = row_top
+                        track_h = viewport_h
+                        track_w = 3.0
+                        # Gutter between the row cards (w-18) and the notch edge curve (w-10)
+                        track_x = w - 14.0
+                        content_h = self._tasks_content_height(len(all_tasks))
+                        thumb_h = max(18.0, track_h * (track_h / content_h))
+                        thumb_y = track_top + (track_h - thumb_h) * (self.notch_task_scroll / max_scroll)
+                        thumb_col = QColor(theme.TEXT_SECONDARY)
+                        thumb_col.setAlphaF(ext_opacity * 0.75)
+                        painter.setBrush(QBrush(thumb_col))
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawRoundedRect(QRectF(track_x, thumb_y, track_w, thumb_h), 1.5, 1.5)
 
             elif self.is_creating_task:
                 ext_progress = min(1.0, max(0.0, (h - 54.0) / (104.0 - 54.0)))
