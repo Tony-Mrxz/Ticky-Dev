@@ -5,8 +5,8 @@ build/
 output.log
 generate_ico.py
 
-# Windows onedir bundle, staged speech model, compiled setup exe
-dist/Ticky/
+# Build output, staged speech model, compiled setup exe
+dist/
 models/
 installer/output/
 
