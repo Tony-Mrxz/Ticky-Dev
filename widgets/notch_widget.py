@@ -438,6 +438,7 @@ class NotchWidget(QWidget):
 
         # System-Wide App & Software Search in Notch (Alt + W)
         self.app_search_in_notch = False
+        self._notch_had_activation = False
         self.app_search_widget = NotchAppSearchWidget(self, parent=self)
         self.app_search_widget.hide()
         self.app_search_widget.request_geometry_update.connect(self._on_app_search_geometry_requested)
@@ -657,11 +658,17 @@ class NotchWidget(QWidget):
                 pass
 
     def event(self, event):
-        if (
+        if event.type() == QEvent.Type.WindowActivate:
+            self._notch_had_activation = True
+        elif (
             event.type() == QEvent.Type.WindowDeactivate
             and getattr(self, "app_search_in_notch", False)
         ):
-            self.collapse_app_search()
+            # Losing activation we never had is not the user clicking away: Windows can
+            # refuse SetForegroundWindow for a Tool window and still deliver a deactivate.
+            if getattr(self, "_notch_had_activation", False):
+                self.collapse_app_search()
+            self._notch_had_activation = False
         return super().event(event)
 
     def showEvent(self, event):
@@ -2461,7 +2468,12 @@ class NotchWidget(QWidget):
         if getattr(self, "active_update_alert", None) is None:
             return
         self.update_alert_status = status
-        self.update_alert_detail = detail
+        # A status change that carries no message must not blank the detail line out
+        self.update_alert_detail = detail or {
+            "available": f"You're on {APP_VERSION}",
+            "downloading": "Downloading the new setup…",
+            "failed": "Opened the release page - try again.",
+        }.get(status, "")
         if status == "ready":
             # The installer is about to take over; drop the pill away again.
             self._retire_update_alert()
@@ -3221,6 +3233,20 @@ class NotchWidget(QWidget):
         self._exit_conflicting_modes("app_search")
         self.app_search_in_notch = True
         self._is_hovered = False
+        # A collapse timer armed by the stage search replaced (the add capsule arms a
+        # 5s one) would otherwise drop the search HUD to the ground state mid-typing.
+        self.unhover_collapse_timer.stop()
+        if hasattr(self, "sub_pill_hover_timer"):
+            self.sub_pill_hover_timer.stop()
+        if hasattr(self, "sub_pill_leave_timer"):
+            self.sub_pill_leave_timer.stop()
+        if hasattr(self, "empty_reminders_restore_timer"):
+            self.empty_reminders_restore_timer.stop()
+        if hasattr(self, "empty_notes_restore_timer"):
+            self.empty_notes_restore_timer.stop()
+        if hasattr(self, "timer_stopped_collapse_timer"):
+            self.timer_stopped_collapse_timer.stop()
+        self._notch_had_activation = False
 
         if hasattr(self, "sub_pill") and self.sub_pill and self.sub_pill.isVisible():
             self.sub_pill.hide_animated()
@@ -3316,6 +3342,8 @@ class NotchWidget(QWidget):
         if not force and getattr(self, "media_in_notch", False):
             return
         if not force and getattr(self, "dictation_in_notch", False):
+            return
+        if not force and getattr(self, "app_search_in_notch", False):
             return
         if self.timer_is_running:
             return
@@ -4126,7 +4154,7 @@ class NotchWidget(QWidget):
                 self.update()
             return
 
-        if (self._is_hovered or self.add_expanded or self.timer_in_notch or self.notes_in_notch or self.tasks_in_notch or self.is_creating_note or self.is_creating_task or getattr(self, "ai_chat_in_notch", False) or getattr(self, "media_in_notch", False) or getattr(self, "reminders_in_notch", False)) and self.height() > 38:
+        if (self._is_hovered or self.add_expanded or self.timer_in_notch or self.notes_in_notch or self.tasks_in_notch or self.is_creating_note or self.is_creating_task or getattr(self, "ai_chat_in_notch", False) or getattr(self, "media_in_notch", False) or getattr(self, "reminders_in_notch", False) or getattr(self, "app_search_in_notch", False)) and self.height() > 38:
             if self.unhover_collapse_timer.isActive():
                 self.unhover_collapse_timer.stop()
                 self._is_hovered = True
@@ -5417,37 +5445,39 @@ class NotchWidget(QWidget):
                 "ready": "READY TO INSTALL",
                 "failed": "UPDATE FAILED",
             }.get(status, "UPDATE AVAILABLE")
-            status_rect = QRectF(content_x, cover_y + 1.0, content_w, 15.0)
+            # The three lines sit as one block, centred inside the cover box
+            block_top = cover_y + (cover_size - 50.0) / 2.0
+            status_rect = QRectF(content_x, block_top, content_w, 15.0)
             font_upd_status = QFont(font_family, 9, QFont.Weight.Bold)
             font_upd_status.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
             painter.setFont(font_upd_status)
             status_col = QColor("#FF453A") if status == "failed" else QColor(theme.ACCENT_COLOR)
             status_col.setAlphaF(opacity)
             painter.setPen(status_col)
-            painter.drawText(status_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, status_text)
+            painter.drawText(status_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, status_text)
 
             # Middle: release title
             version_text = str(getattr(self.active_update_alert, "version", "") or "").strip()
             title_text = f"Ticky {version_text}".strip() or "Ticky update"
-            title_rect = QRectF(content_x, cover_y + 17.0, content_w, 20.0)
+            title_rect = QRectF(content_x, block_top + 16.0, content_w, 20.0)
             font_upd_title = QFont(font_family, 12, QFont.Weight.Bold)
             painter.setFont(font_upd_title)
             elided_title = painter.fontMetrics().elidedText(title_text, Qt.TextElideMode.ElideRight, int(content_w))
             title_col = QColor("#FFFFFF")
             title_col.setAlphaF(opacity)
             painter.setPen(title_col)
-            painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided_title)
+            painter.drawText(title_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, elided_title)
 
             # Bottom: what's happening detail
             detail_text = getattr(self, "update_alert_detail", "") or ""
-            detail_rect = QRectF(content_x, cover_y + 37.0, content_w, 14.0)
+            detail_rect = QRectF(content_x, block_top + 36.0, content_w, 14.0)
             font_upd_detail = QFont(font_family, 9)
             painter.setFont(font_upd_detail)
             elided_detail = painter.fontMetrics().elidedText(detail_text, Qt.TextElideMode.ElideRight, int(content_w))
             detail_col = QColor("#FFFFFF")
             detail_col.setAlphaF(opacity * 0.55)
             painter.setPen(detail_col)
-            painter.drawText(detail_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided_detail)
+            painter.drawText(detail_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, elided_detail)
 
             # Right column: stacked action buttons, [ primary ] above [ secondary ]
             primary_label = {"failed": "Retry", "downloading": "Downloading…"}.get(status, "Update now")
@@ -5463,7 +5493,9 @@ class NotchWidget(QWidget):
                 painter.setBrush(QBrush(now_bg))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(now_rect, 8.0, 8.0)
-                now_text_col = QColor("#FFFFFF")
+                # White disappears on a bright accent (cyan, lime), so pick by perceived luma
+                luma = 0.299 * now_bg.red() + 0.587 * now_bg.green() + 0.114 * now_bg.blue()
+                now_text_col = QColor("#061019") if luma > 150 else QColor("#FFFFFF")
             else:
                 self.update_now_rect = QRect()
                 now_bg = QColor(accent_color)
@@ -5475,8 +5507,14 @@ class NotchWidget(QWidget):
                 painter.drawRoundedRect(now_rect, 8.0, 8.0)
                 now_text_col = QColor(theme.ACCENT_COLOR)
             now_text_col.setAlphaF(opacity * (0.75 if not primary_live else 1.0))
-            painter.setFont(QFont(font_family, 9, QFont.Weight.Bold))
-            painter.drawText(now_rect, Qt.AlignmentFlag.AlignCenter, primary_label)
+            # The fill left NoPen (or the border pen) live; without re-applying it the
+            # label is drawn with no stroke and the button reads as an empty slab.
+            painter.setPen(now_text_col)
+            font_now = QFont(font_family, 9, QFont.Weight.Bold)
+            painter.setFont(font_now)
+            elided_now = painter.fontMetrics().elidedText(
+                primary_label, Qt.TextElideMode.ElideRight, int(btn_w - 12.0))
+            painter.drawText(now_rect, Qt.AlignmentFlag.AlignCenter, elided_now)
 
             later_rect = QRectF(btn_x, btn_y_top + btn_h + btn_gap, btn_w, btn_h)
             self.update_later_rect = QRect(int(btn_x), int(btn_y_top + btn_h + btn_gap), int(btn_w), int(btn_h))
@@ -5489,9 +5527,12 @@ class NotchWidget(QWidget):
             painter.setPen(QPen(later_border, 1.0))
             painter.drawRoundedRect(later_rect, 8.0, 8.0)
             later_text_col = QColor("#FFFFFF")
-            later_text_col.setAlphaF(opacity * (1.0 if later_hover else 0.8))
+            later_text_col.setAlphaF(opacity * (1.0 if later_hover else 0.92))
+            painter.setPen(later_text_col)
             painter.setFont(QFont(font_family, 9, QFont.Weight.DemiBold))
-            painter.drawText(later_rect, Qt.AlignmentFlag.AlignCenter, secondary_label)
+            elided_later = painter.fontMetrics().elidedText(
+                secondary_label, Qt.TextElideMode.ElideRight, int(btn_w - 12.0))
+            painter.drawText(later_rect, Qt.AlignmentFlag.AlignCenter, elided_later)
 
             # Clear normal mode rects
             self.time_box_rect = QRect()

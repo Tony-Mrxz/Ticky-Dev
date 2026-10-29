@@ -24,7 +24,7 @@ from utils import config
 from utils.app_indexer import AppIndexer
 from utils.app_usage import AppUsageStore
 from utils.file_indexer import FileIndexer, open_path
-from utils.web_search import open_google_search
+from utils.web_search import normalize_url, open_google_search, open_url
 from widgets.app_icon_service import AppIconService
 
 VISIBLE_ROWS = 4
@@ -42,6 +42,10 @@ GOOGLE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
 <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
 </svg>"""
 
+GLOBE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24">
+<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m7.93 9h-3.51a12.6 12.6 0 0 0-1.33-5.56A8.03 8.03 0 0 1 19.93 11M12 4.14c.86 1.13 1.83 3.2 1.93 6.86h-3.86c.1-3.66 1.07-5.73 1.93-6.86M8.91 5.44A12.6 12.6 0 0 0 7.58 11H4.07A8.03 8.03 0 0 1 8.91 5.44M4.07 13h3.51a12.6 12.6 0 0 0 1.33 5.56A8.03 8.03 0 0 1 4.07 13m7.02 6.86c-.86-1.13-1.83-3.2-1.93-6.86h3.86c-.1 3.66-1.07 5.73-1.93 6.86m1.09-1.3A12.6 12.6 0 0 0 15.42 13h3.51a8.03 8.03 0 0 1-4.83 5.56"/>
+</svg>"""
+
 
 def render_svg(svg: str, size: int) -> QPixmap:
     renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
@@ -55,7 +59,7 @@ def render_svg(svg: str, size: int) -> QPixmap:
 
 @dataclass(slots=True)
 class SearchResult:
-    kind: str  # "app", "google", "file"
+    kind: str  # "url", "app", "google", "file"
     title: str
     subtitle: str
     icon_key: str | None = None
@@ -68,6 +72,8 @@ class SearchResult:
             return f"app:{self.payload.usage_key}"
         if self.kind == "file":
             return f"file:{self.payload.path.casefold()}"
+        if self.kind == "url":
+            return f"url:{self.payload.casefold()}"
         return "google"
 
 
@@ -104,9 +110,22 @@ def file_result(item) -> SearchResult:
     )
 
 
+def url_result(url: str) -> SearchResult:
+    host = url.split("://", 1)[1].split("/", 1)[0] if "://" in url else url
+    return SearchResult(
+        kind="url",
+        title=host,
+        subtitle=url,
+        payload=url,
+        hint="Visit ↵",
+    )
+
+
 def compose_results(app_matches, query: str, file_matches=()) -> list[SearchResult]:
-    """Order results as applications, then Google, then files and folders."""
-    results = [app_result(app) for app in app_matches]
+    """Order results as a typed website first, then applications, Google, files and folders."""
+    url = normalize_url(query)
+    results = [url_result(url)] if url else []
+    results.extend(app_result(app) for app in app_matches)
     if query.strip():
         results.append(google_result(query))
     results.extend(file_result(item) for item in file_matches)
@@ -320,6 +339,7 @@ class NotchAppSearchWidget(QWidget):
         self._results_query = ""
         self._active_query = ""
         self._google_icon: QPixmap | None = None
+        self._globe_icon: QPixmap | None = None
 
         self._indexer = AppIndexer.get_instance()
         self._files = FileIndexer.get_instance()
@@ -478,6 +498,12 @@ class NotchAppSearchWidget(QWidget):
             self._google_icon = render_svg(GOOGLE_SVG, 22)
         return self._google_icon
 
+    def _globe_pixmap(self) -> QPixmap:
+        if self._globe_icon is None:
+            svg = GLOBE_SVG.replace("COLOR_PLACEHOLDER", QColor(theme.ACCENT_COLOR).name())
+            self._globe_icon = render_svg(svg, 22)
+        return self._globe_icon
+
     def reset_state(self):
         """Prepare widget for a fresh search session."""
         self._search_timer.stop()
@@ -608,6 +634,8 @@ class NotchAppSearchWidget(QWidget):
         for result in results:
             if result.kind == "google":
                 icon = self._google_pixmap()
+            elif result.kind == "url":
+                icon = self._globe_pixmap()
             else:
                 icon = self._icons.cached(result.icon_key) or placeholder
             row = SearchResultRow(result, icon, self.results_container, self._font_family)
@@ -667,6 +695,8 @@ class NotchAppSearchWidget(QWidget):
             app = result.payload
             self._usage.record(self._active_query, app.usage_key)
             self._indexer.launch(app)
+        elif result.kind == "url":
+            open_url(result.payload)
         elif result.kind == "google":
             open_google_search(result.payload)
         elif result.kind == "file":
