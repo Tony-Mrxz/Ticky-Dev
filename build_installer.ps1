@@ -49,6 +49,12 @@ if (-not $Iscc) {
     )) {
         if (Test-Path -LiteralPath $candidate) { $Iscc = $candidate; break }
     }
+    # choco on the CI runner installs under a Program Files variant we may not
+    # guess, so fall back to whatever is on PATH before giving up.
+    if (-not $Iscc) {
+        $onPath = Get-Command iscc, ISCC.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($onPath) { $Iscc = $onPath.Source }
+    }
     if (-not $Iscc) {
         throw "Inno Setup compiler not found. Install it with: winget install JRSoftware.InnoSetup"
     }
@@ -135,10 +141,17 @@ if ($SkipApp -or $SkipSmoke -or $alreadyRunning) {
     $proc = Start-Process -FilePath $exe -PassThru
     Start-Sleep -Seconds 8
     if ($proc.HasExited) {
-        throw "Ticky.exe exited with code $($proc.ExitCode). Either an import failed (set console=True in Ticky.spec to see it) or another Ticky - including a 'python main.py' dev run - holds the single-instance lock."
+        if ($proc.ExitCode -eq 0) {
+            # main.py exits 0 when ticky_application.lock is already held, and a dev
+            # run holds it as python/pythonw - which Get-Process 'Ticky' cannot see.
+            Write-Host "  stood down: another instance holds the single-instance lock. Smoke test skipped." -ForegroundColor Yellow
+        } else {
+            throw "Ticky.exe exited with code $($proc.ExitCode). An import probably failed - set console=True in Ticky.spec to see the traceback."
+        }
+    } else {
+        Stop-Process -Id $proc.Id -Force
+        Write-Host "  launched and stopped cleanly"
     }
-    Stop-Process -Id $proc.Id -Force
-    Write-Host "  launched and stopped cleanly"
 }
 
 # --- setup exe ---------------------------------------------------------------
