@@ -478,8 +478,8 @@ class MainWindow(QWidget):
         super().__init__()
         
         # Set window icon
-        from utils.icon import create_ticky_icon
-        self.setWindowIcon(create_ticky_icon())
+        from utils.icon import load_ticky_icon
+        self.setWindowIcon(load_ticky_icon())
         
         # Set frameless and tool window flags from configuration
         always_on_top = config.load_always_on_top()
@@ -524,11 +524,17 @@ class MainWindow(QWidget):
         self.celebration_overlay.setGeometry(self.rect())
         self.celebration_overlay.raise_()
         
+        self.notch_widget = None
+
         self.init_ui()
         self.load_window_position()
         self.update_tasks_view()
         self.update_inactivity_timer_settings()
         self.register_global_hotkeys()
+        
+        # Apply UI style (Classic Floating vs Dynamic Notch)
+        initial_ui_style = config.load_ui_style("classic")
+        self.apply_ui_style(initial_ui_style)
         
         # Spotify Mini Mode Menu Button
         self.spotify_menu_btn = SpotifyMenuButton(self)
@@ -539,6 +545,26 @@ class MainWindow(QWidget):
         
         # Install global drag event filter
         QApplication.instance().installEventFilter(self)
+
+    def apply_ui_style(self, style_mode):
+        """Notch is the sole UI now: classic floating window and ball are retired."""
+        from widgets.notch_widget import NotchWidget
+        if not self.notch_widget:
+            self.notch_widget = NotchWidget(self)
+        self.notch_widget.show()
+        self.hide()
+
+    def toggle_notch_visibility(self):
+        """Show/hide the Notch HUD (tray Show/Hide)."""
+        from widgets.notch_widget import NotchWidget
+        if not self.notch_widget:
+            self.notch_widget = NotchWidget(self)
+        if self.notch_widget.isVisible():
+            self.notch_widget.hide()
+        else:
+            self.notch_widget.show()
+            self.notch_widget.ensure_stays_on_top()
+
 
     def init_ui(self):
         # Allow height to wrap contents dynamically, fixed width 360, minimum height 150
@@ -1143,50 +1169,14 @@ class MainWindow(QWidget):
             anim.start()
 
     def update_inactivity_timer_settings(self):
-        enabled = config.load_minimize_on_idle()
-        minutes = config.load_idle_minutes()
-        aot = config.load_always_on_top()
-        
-        print(f"Inactivity timer settings updated: enabled={enabled}, minutes={minutes}, aot={aot}", file=sys.stderr)
-        if enabled and aot:
-            self.inactivity_timer.setInterval(minutes * 60 * 1000)
-            self.inactivity_timer.start()
-            print("Inactivity timer started/restarted.", file=sys.stderr)
-        else:
-            self.inactivity_timer.stop()
-            print("Inactivity timer stopped.", file=sys.stderr)
-        sys.stderr.flush()
+        # Auto-minimize to ball is retired; keep the timer permanently off.
+        self.inactivity_timer.stop()
 
     def minimize_to_ball(self):
-        # Prevent automatic idle minimize if a task is active or timer/stopwatch is running
+        # Floating ball is retired — the Notch HUD is the only desktop UI.
         if self.sender() == self.inactivity_timer:
-            has_active_task = self.focus_card is not None
-            has_running_timer = hasattr(self, 'toolbar') and self.toolbar and self.toolbar.is_timer_running
-            if has_active_task or has_running_timer:
-                print("Task or Timer is active, skipping auto-minimize to ball.", file=sys.stderr)
-                sys.stderr.flush()
-                self.inactivity_timer.start()
-                return
-
-        print("Inactivity timeout reached! Minimizing to ball.", file=sys.stderr)
-        sys.stderr.flush()
-        self.inactivity_timer.stop()
-        self.widget_state = "minimized_ball"
-        
-        if hasattr(self, 'settings_window') and self.settings_window:
-            self.settings_window.hide()
-            
-        self.hide()
-        
-        from widgets.ball_widget import BallWidget
-        if not self.ball_widget:
-            self.ball_widget = BallWidget(self)
-            
-        geom = self.geometry()
-        cx = geom.x() + (geom.width() - 40) // 2
-        cy = geom.y() + (geom.height() - 40) // 2
-        self.ball_widget.move(cx, cy)
-        self.ball_widget.show()
+            self.inactivity_timer.stop()
+        return
 
     def restore_from_ball(self):
         self.widget_state = "normal"
@@ -1417,8 +1407,8 @@ class MainWindow(QWidget):
         set_window_capture_exclusion(int(self.winId()), enabled)
         if hasattr(self, 'settings_window') and self.settings_window:
             set_window_capture_exclusion(int(self.settings_window.winId()), enabled)
-        if hasattr(self, 'ball_widget') and self.ball_widget:
-            set_window_capture_exclusion(int(self.ball_widget.winId()), enabled)
+        if hasattr(self, 'notch_widget') and self.notch_widget:
+            set_window_capture_exclusion(int(self.notch_widget.winId()), enabled)
 
     # Native class drop-shadow configuration & window show handling
     def showEvent(self, event):
@@ -1553,6 +1543,10 @@ class MainWindow(QWidget):
         
         if hasattr(self, 'ai_panel') and self.ai_panel:
             self.ai_panel.refresh_styles()
+            
+        if hasattr(self, 'notch_widget') and self.notch_widget:
+            self.notch_widget.apply_notch_style()
+
         
         # Helper to refresh widget style if applicable
         def refresh_widget_theme(w):
@@ -1595,12 +1589,12 @@ class MainWindow(QWidget):
         is_linked = (backend_mode == "gsmtc") or bool(client_id and client_secret) or config.load_spotify_demo_mode()
         
         if not is_linked:
-            # Open settings and switch to Spotify category
+            # Open settings and switch to Media Player category
             if not hasattr(self, 'settings_window') or self.settings_window is None:
                 from ui.settings_window import SettingsWindow
                 self.settings_window = SettingsWindow(self)
             self.settings_window.show_centered()
-            self.settings_window.switch_page(4)
+            self.settings_window.switch_page(3)
         else:
             # Collapse AI if it is expanded
             if hasattr(self, 'ai_panel') and self.ai_panel.is_expanded:
@@ -1620,7 +1614,7 @@ class MainWindow(QWidget):
                 self.settings_window = SettingsWindow(self)
             self.settings_window.opened_from_ai = True
             self.settings_window.show_centered()
-            self.settings_window.switch_page(5)
+            self.settings_window.switch_page(4)
         else:
             # Collapse Spotify if it is expanded
             if hasattr(self, 'spotify_panel') and self.spotify_panel.is_expanded:
@@ -1656,6 +1650,18 @@ class MainWindow(QWidget):
             if user32.RegisterHotKey(hwnd, 2, n_mods, n_vk):
                 self.registered_hotkeys[2] = "new_task"
 
+        # 3. Voice Dictation Shortcut
+        d_mods, d_vk = parse_shortcut_string(self.shortcuts.get("voice_dictation", "Alt+D"))
+        if d_vk:
+            if user32.RegisterHotKey(hwnd, 3, d_mods, d_vk):
+                self.registered_hotkeys[3] = "voice_dictation"
+
+        # 4. System-Wide App Search Shortcut
+        w_mods, w_vk = parse_shortcut_string(self.shortcuts.get("app_search", "Alt+W"))
+        if w_vk:
+            if user32.RegisterHotKey(hwnd, 4, w_mods, w_vk):
+                self.registered_hotkeys[4] = "app_search"
+
     def unregister_global_hotkeys(self):
         import sys
         if sys.platform != 'win32':
@@ -1670,23 +1676,34 @@ class MainWindow(QWidget):
 
     def handle_global_hotkey(self, action):
         if action == "toggle_window":
-            if self.widget_state == "minimized_ball":
-                self.restore_from_ball()
-                self.activateWindow()
-            else:
-                if self.isVisible() and self.isActiveWindow():
-                    self.minimize_to_ball()
-                else:
-                    self.show()
-                    self.restore_from_ball()
-                    self.activateWindow()
+            self.toggle_notch_visibility()
         elif action == "new_task":
-            if self.widget_state == "minimized_ball":
-                self.restore_from_ball()
-            self.show()
-            self.restore_from_ball() # Ensure fully restored
-            self.activateWindow()
-            self.start_add_task()
+            from widgets.notch_widget import NotchWidget
+            if not self.notch_widget:
+                self.notch_widget = NotchWidget(self)
+            self.notch_widget.show()
+            self.notch_widget.ensure_stays_on_top()
+            self.notch_widget.expand_add_mode()
+        elif action == "voice_dictation":
+            self._toggle_voice_dictation()
+        elif action == "app_search":
+            self._toggle_app_search()
+
+    def _toggle_voice_dictation(self):
+        """Ensure the Notch HUD exists, then toggle smart voice dictation."""
+        from widgets.notch_widget import NotchWidget
+        if not self.notch_widget:
+            self.notch_widget = NotchWidget(self)
+        # Do not activate the main window — dictation captures the focused field first,
+        # then expands the Notch with WA_ShowWithoutActivating.
+        self.notch_widget.toggle_dictation()
+
+    def _toggle_app_search(self):
+        """Ensure the Notch HUD exists, then toggle system-wide app search."""
+        from widgets.notch_widget import NotchWidget
+        if not self.notch_widget:
+            self.notch_widget = NotchWidget(self)
+        self.notch_widget.toggle_app_search()
 
     def nativeEvent(self, eventType, message):
         import sys

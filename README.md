@@ -15,3 +15,24 @@ Developed by **Tony Mrxz**.
 - **Styling:** Custom QSS (Qt Style Sheets) stylesheet architecture
 - **System Integrations:** Windows Registry for auto-startup hooks, win32 API wrapper modules
 - **Music API:** Spotify Web API Client credentials flow
+
+## Install (Windows)
+
+Run `Ticky-Setup-<version>.exe`. It installs per-user into
+`%LOCALAPPDATA%\Programs\Ticky`, needs no admin rights and no Python, and
+carries the Whisper `base.en` model so dictation works offline from the first
+launch. Uninstalling removes the app and its login item but keeps your settings
+in `~/.ticky_config.json`.
+
+## Build the installer
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and the project virtualenv:
+
+```powershell
+.\build_installer.ps1
+```
+
+It stages the speech model, builds the onedir bundle with PyInstaller, launches
+it once as a smoke test, and writes `installer\output\Ticky-Setup-<version>.exe`.
+Use `-SkipModel` for a fast build without the 141 MB model, `-SkipApp` to
+recompile only the setup, `-SkipSmoke` to skip the launch check.

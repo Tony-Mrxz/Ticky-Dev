@@ -4,6 +4,19 @@
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QPainterPath, QPen
 from PySide6.QtCore import Qt, QPointF
 
+import os
+
+def load_ticky_icon():
+    """Load the branded Ticky icon (ticky.ico with ticky.png fallback)."""
+    base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    for name in ("ticky.ico", "ticky.png"):
+        path = os.path.join(base, name)
+        if os.path.exists(path):
+            icon = QIcon(path)
+            if not icon.isNull():
+                return icon
+    return create_ticky_icon()
+
 
 def create_ticky_icon():
     """Create a white checkmark icon based on the Boxicons SVG design for system tray and windows."""

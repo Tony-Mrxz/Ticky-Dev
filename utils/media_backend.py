@@ -144,7 +144,12 @@ class WindowsMediaBackend(BaseMediaBackend):
                 artist_l = artist.lower()
                 album_l = album.lower()
                 
-                pb_type = int(playback.playback_type) if playback.playback_type is not None else 0
+                try:
+                    pb_type = int(playback.playback_type) if playback.playback_type is not None else 0
+                except Exception:
+                    # winrt-Windows.Media namespace package missing: never let
+                    # this kill the whole session (see requirements.txt)
+                    pb_type = 0
                 
                 # Check for Spotify Desktop
                 is_spotify_desktop = "spotify" in app_id

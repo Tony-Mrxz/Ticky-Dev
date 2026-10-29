@@ -1,5 +1,19 @@
-PySide6>=6.0.0
+# Runtime dependencies — every entry here is imported by application code.
+# Build-only tooling lives in [build] below.
+
+PySide6>=6.6,<7
 requests>=2.25.0
-pyinstaller>=5.0.0
+numpy>=1.26
+faster-whisper>=1.1.0
+
+# Windows: SMTC media controls, text injection into the focused field,
+# and the global hotkey registry.
+pywin32>=306; sys_platform == "win32"
 winrt-Windows.Media.Control>=3.0.0; sys_platform == "win32"
+winrt-Windows.Media>=3.0.0; sys_platform == "win32"
 winrt-Windows.Storage.Streams>=3.0.0; sys_platform == "win32"
+winrt-Windows.Foundation>=3.0.0; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=3.0.0; sys_platform == "win32"
+
+# Build only (pyinstaller + the installer toolchain are invoked by build_installer.ps1).
+pyinstaller>=6.0

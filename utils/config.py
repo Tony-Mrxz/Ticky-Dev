@@ -164,8 +164,9 @@ def save_show_seconds(value):
     save_config({"show_seconds": value})
 
 def load_clock_style(default_value="neon"):
-    """Load the selected clock display style."""
-    return load_config().get("clock_style", default_value)
+    """Load the selected clock display style (retired styles fall back to the default)."""
+    value = load_config().get("clock_style", default_value)
+    return value if value in ("classic", "casio", "minimal", "neon") else default_value
 
 def save_clock_style(value):
     """Save the selected clock display style."""
@@ -244,12 +245,22 @@ def save_ai_model(value):
     """Save selected AI Model."""
     save_config({"ai_model": value})
 
+def load_mic_device_id(default_value=""):
+    """Load preferred microphone device id for voice dictation (empty = system default)."""
+    return load_config().get("mic_device_id", default_value)
+
+def save_mic_device_id(value):
+    """Save preferred microphone device id for voice dictation."""
+    save_config({"mic_device_id": value})
+
 def load_shortcuts(default_shortcuts=None):
-    """Load keyboard shortcuts mapping. Default includes Alt+T and Alt+Q."""
+    """Load keyboard shortcuts mapping. Default includes Alt+T, Alt+Q, Alt+D, and Alt+W."""
     if default_shortcuts is None:
         default_shortcuts = {
             "toggle_window": "Alt+T",
-            "new_task": "Alt+Q"
+            "new_task": "Alt+Q",
+            "voice_dictation": "Alt+D",
+            "app_search": "Alt+W",
         }
     data = load_config()
     saved = data.get("shortcuts", {})
@@ -269,6 +280,14 @@ def save_notes(notes_list):
     """Save the list of active notes/notepads."""
     save_config({"notes": notes_list})
 
+def load_reminders():
+    """Load the list of active reminders."""
+    return load_config().get("reminders", [])
+
+def save_reminders(reminders_list):
+    """Save the list of active reminders."""
+    save_config({"reminders": reminders_list})
+
 def load_hide_while_streaming(default_value=False):
     """Load whether hide while streaming mode is enabled."""
     return load_config().get("hide_while_streaming", default_value)
@@ -276,4 +295,32 @@ def load_hide_while_streaming(default_value=False):
 def save_hide_while_streaming(value):
     """Save whether hide while streaming mode is enabled."""
     save_config({"hide_while_streaming": value})
+
+def load_ui_style(default_value="notch"):
+    """Load the selected UI style mode. Classic floating window is retired; Notch is the only UI."""
+    return "notch"
+
+def save_ui_style(value):
+    """Deprecated: UI style is locked to the Notch; kept so old callers are harmless."""
+    pass
+
+def load_onboarding_version(default_value=0):
+    """Highest onboarding flow version the user has completed (0 = never)."""
+    try:
+        return int(load_config().get("onboarding_version", default_value))
+    except (TypeError, ValueError):
+        return default_value
+
+def save_onboarding_version(value):
+    """Record that the onboarding flow of this version has been completed."""
+    save_config({"onboarding_version": int(value)})
+
+def load_check_for_updates(default_value=True):
+    """Load whether Ticky asks GitHub for a newer release shortly after startup."""
+    return load_config().get("check_for_updates", default_value)
+
+def save_check_for_updates(value):
+    """Save whether Ticky asks GitHub for a newer release shortly after startup."""
+    save_config({"check_for_updates": bool(value)})
+
 

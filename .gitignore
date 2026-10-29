@@ -4,3 +4,8 @@ __pycache__/
 build/
 output.log
 generate_ico.py
+
+# Windows onedir bundle, staged speech model, compiled setup exe
+dist/Ticky/
+models/
+installer/output/

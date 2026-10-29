@@ -19,48 +19,62 @@ AI_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill=
 SEND_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="m21.41 11.09-18-8a1 1 0 0 0-1.09.19c-.29.28-.39.7-.25 1.08l2.87 7.65-2.87 7.65c-.14.38-.04.8.25 1.08a1 1 0 0 0 1.1.18l18-8a.998.998 0 0 0 0-1.82ZM4.78 18.12l1.23-3.27V15l6-3-6-3v.15L4.78 5.88 18.54 12z"></path></svg>"""
 
 SYSTEM_PROMPT = """You are Ticky AI, an intelligent desktop assistant integrated into the Ticky productivity application.
-Your task is to ALWAYS provide a complete, friendly, helpful chat response to the user AND automatically detect actions (TASK or NOTE) implied by their message.
+Respond naturally, helpfully, and conversationally like ChatGPT.
 
-CRITICAL CHAT RESPONSE MANDATE:
-- `chat_response`: You MUST ALWAYS fill `chat_response` with your complete, helpful, natural language message to the user.
-- For research/information queries (e.g. "Can you do a small research on binary digits?"): Write the FULL research and answers in `chat_response`, AND confirm that you also saved the summary as a note 📝.
-- For tasks (e.g. "We gotta update the website now"): Write a friendly confirmation in `chat_response` (e.g., "Got it! I've added **Update the website** to your tasks.\\nWant to start working on it now?").
-- For notes (e.g. "Remember port is 3000"): Write a friendly confirmation in `chat_response` (e.g., "Saved it as a note. 📝").
-- NEVER leave `chat_response` empty, short, or blank!
-
-INTENT DETECTION RULES:
-
-1. TASK INTENT:
-   - When user message implies an item to DO ("We gotta update website", "Finish assignment tomorrow", "Call John").
-   - Extract concise title. Extract metadata ONLY if explicitly provided (due_date, priority). Do NOT invent missing details.
-   - Action item: {"name": "create_task", "params": {"title": "...", "due_date": "...", "priority": "..."}}
-   - Set show_start_button: true, created_task_title: "title".
-
-2. NOTE INTENT:
-   - When user request implies saving info ("Research binary digits", "Remember website port is 3000", "Save this idea").
-   - Action item: {"name": "create_note", "params": {"title": "...", "content": "..."}}
-
-3. START TASK INTENT:
-   - When user asks to start a task or says "start it", "let's do it", "yes start".
-   - Action item: {"name": "start_task", "params": {"title": "..."}}
-
-4. AMBIGUOUS INTENT:
-   - Statements where intent is unclear ("The website needs updating.").
-   - Ask a short clarification in `chat_response` ("Want me to add 'Update the website' to your tasks?"). Set actions: [].
-
-OUTPUT REQUIREMENTS:
-Output strictly valid JSON matching:
+OUTPUT FORMAT:
+You MUST respond strictly with a valid JSON object. Do not include any surrounding markdown fences or plain text outside the JSON object.
+The JSON object must adhere to the following schema:
 {
-  "actions": [
-    {
-      "name": "create_task" | "create_note" | "start_task",
-      "params": { ... }
-    }
-  ],
-  "chat_response": "YOUR FULL COMPLETE HELPFUL CHAT MESSAGE HERE",
+  "chat_response": "Your natural language response...",
+  "actions": [],
   "show_start_button": false,
   "created_task_title": ""
 }
+
+FORMATTING GUIDELINES FOR `chat_response`:
+- Be direct, friendly, and natural.
+- GREETINGS & CASUAL CHAT (e.g. "hi", "hello", "hoi", "hey", "how are you"):
+  Reply conversationally in clean, plain text. NEVER use headings (`#`, `##`), bolding, or italics for simple greetings or casual conversation!
+- DO NOT add unnecessary headings, bold text, or italics to short messages.
+- ONLY use formatting when genuinely helpful and appropriate:
+  - Code blocks (```language ... ```) when providing programming code or commands.
+  - Bullet points or numbered lists when listing steps, items, or recommendations.
+  - Subheadings (`###`) ONLY for long multi-section guides or research articles. Never use `#` (H1).
+  - Bold text ONLY for key terms or metrics that need emphasis.
+
+CRITICAL CHAT RESPONSE MANDATE:
+- `chat_response`: You MUST ALWAYS fill `chat_response` with your complete, helpful answer.
+- FOR INFORMATION, QUESTIONS, RECOMMENDATIONS, ADVICE, EXPLANATIONS, AND GENERAL CHAT (e.g. "I Need some information about interior designers in vizag", "Explain how engines work", "Give me 5 book suggestions"):
+  Provide the FULL, rich, comprehensive answer directly in `chat_response`.
+  CRITICAL: DO NOT save this as a note and DO NOT create any actions! Set `"actions": []`.
+- NEVER create a note or task unless the user EXPLICITLY commands you to save or create one!
+
+INTENT DETECTION RULES:
+
+1. GENERAL CHAT / INFORMATION / RESEARCH (DEFAULT):
+   - Whenever the user asks a question, requests information, wants recommendations, advice, research, analysis, or code:
+   - Provide the complete answer in `chat_response`.
+   - Set `"actions": []`. Do NOT create notes or tasks!
+
+2. NOTE INTENT (ONLY WHEN EXPLICITLY COMMANDED TO SAVE):
+   - Trigger ONLY when the user explicitly commands to save a note or remember something (e.g. "Save a note: ...", "Take a note that ...", "Remember that server port is 8080", "Save this as a note: ...").
+   - Action item in actions array: {"name": "create_note", "params": {"title": "...", "content": "..."}}
+   - In `chat_response`, write a friendly confirmation (e.g. "Saved that as a note. 📝").
+
+3. TASK INTENT (ONLY WHEN EXPLICITLY ADDING A TO-DO):
+   - Trigger ONLY when user explicitly wants to add an action item or reminder to their task list (e.g. "Add task: buy groceries", "Remind me to call John at 5pm", "To-do: fix login bug").
+   - Extract concise title. Extract metadata ONLY if explicitly provided (due_date, priority). Do NOT invent missing details.
+   - Action item in actions array: {"name": "create_task", "params": {"title": "...", "due_date": "...", "priority": "..."}}
+   - Set show_start_button: true, created_task_title: "title".
+
+4. START TASK INTENT:
+   - When user asks to start a task or says "start it", "let's do it", "yes start".
+   - Action item in actions array: {"name": "start_task", "params": {"title": "..."}}
+
+5. AMBIGUOUS INTENT:
+   - If the user's intent is ambiguous, answer naturally in `chat_response` and set `"actions": []`.
+
+REMINDER: Always format your entire output as a valid JSON object.
 """
 
 class AIWorker(QThread):
@@ -94,12 +108,16 @@ class AIWorker(QThread):
             else:
                 model = "gemini-1.5-flash"
 
+        system_content = SYSTEM_PROMPT
+        if "json" not in system_content.lower():
+            system_content += "\nRespond strictly in valid JSON format with a JSON object."
+
         try:
             if provider == "gemini":
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
                 headers = {"Content-Type": "application/json"}
                 payload = {
-                    "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                    "system_instruction": {"parts": [{"text": system_content}]},
                     "contents": [{"parts": [{"text": self.prompt}]}]
                 }
                 response = requests.post(url, headers=headers, json=payload, timeout=12)
@@ -120,7 +138,7 @@ class AIWorker(QThread):
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": system_content},
                         {"role": "user", "content": self.prompt}
                     ],
                     "response_format": {"type": "json_object"}
@@ -144,7 +162,7 @@ class AIWorker(QThread):
                 payload = {
                     "model": model,
                     "max_tokens": 1024,
-                    "system": SYSTEM_PROMPT,
+                    "system": system_content,
                     "messages": [{"role": "user", "content": self.prompt}]
                 }
                 response = requests.post(url, headers=headers, json=payload, timeout=12)
@@ -165,7 +183,7 @@ class AIWorker(QThread):
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": system_content},
                         {"role": "user", "content": self.prompt}
                     ],
                     "response_format": {"type": "json_object"}
@@ -188,7 +206,7 @@ class AIWorker(QThread):
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": system_content},
                         {"role": "user", "content": self.prompt}
                     ],
                     "response_format": {"type": "json_object"}
@@ -225,22 +243,55 @@ class ChatBubble(QFrame):
         bubble_layout.setContentsMargins(0, 0, 0, 0)
         bubble_layout.setSpacing(0)
         
-        self.lbl_text = QLabel(text, self)
-        self.lbl_text.setTextFormat(Qt.TextFormat.MarkdownText)
-        self.lbl_text.setWordWrap(True)
-        self.lbl_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.lbl_text.setOpenExternalLinks(True)
-        self.lbl_text.setSizePolicy(_SP.Policy.Preferred, _SP.Policy.Minimum)
-        self.lbl_text.setMaximumWidth(240)
-        
         if is_user:
-            bubble_layout.addStretch(1)
-            bubble_layout.addWidget(self.lbl_text, 0)
-        else:
-            bubble_layout.addWidget(self.lbl_text, 0)
-            bubble_layout.addStretch(1)
+            self.lbl_text = QLabel(text, self)
+            self.lbl_text.setTextFormat(Qt.TextFormat.MarkdownText)
+            self.lbl_text.setWordWrap(True)
+            self.lbl_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.lbl_text.setOpenExternalLinks(True)
+            self.lbl_text.setSizePolicy(_SP.Policy.Preferred, _SP.Policy.Minimum)
             
-        main_layout.addLayout(bubble_layout)
+            from PySide6.QtGui import QFontMetrics, QFont
+            from styles import theme as _theme
+            font = QFont(_theme.FONT_FAMILY)
+            font.setPointSizeF(10.5)
+            self.lbl_text.setFont(font)
+            fm = QFontMetrics(font)
+            raw_lines = text.splitlines() or [""]
+            max_line_w = max(fm.horizontalAdvance(l) for l in raw_lines)
+            padding_h = 24
+            natural_w = max_line_w + padding_h + 8
+            max_allowed = 240
+            target_w = min(max_allowed, max(36, natural_w))
+            self.lbl_text.setFixedWidth(target_w)
+
+            bubble_layout.addStretch(1)
+            bubble_layout.addWidget(self.lbl_text, 0)
+            main_layout.addLayout(bubble_layout)
+            self.text_labels = [(self.lbl_text, text)]
+        else:
+            from widgets.notch_ai_chat import parse_markdown_code_blocks, NotchCodeBlock, markdown_to_rich_html
+            chunks = parse_markdown_code_blocks(text)
+            self.text_labels = []
+            for chunk in chunks:
+                if chunk[0] == "text":
+                    lbl = QLabel(self)
+                    lbl.setTextFormat(Qt.TextFormat.RichText)
+                    lbl.setWordWrap(True)
+                    lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                    lbl.setOpenExternalLinks(True)
+                    lbl.setSizePolicy(_SP.Policy.Preferred, _SP.Policy.Minimum)
+                    lbl.setMaximumWidth(240)
+                    row = QHBoxLayout()
+                    row.addWidget(lbl, 0)
+                    row.addStretch(1)
+                    main_layout.addLayout(row)
+                    self.text_labels.append((lbl, chunk[1]))
+                elif chunk[0] == "code":
+                    cb = NotchCodeBlock(chunk[2], language=chunk[1], parent=self)
+                    cb.setMaximumWidth(240)
+                    main_layout.addWidget(cb)
+            self.lbl_text = self.text_labels[0][0] if self.text_labels else None
         
         # Action buttons for AI messages (e.g. [ Start Task ] [ Not now ])
         if not is_user and action_buttons:
@@ -304,6 +355,7 @@ class ChatBubble(QFrame):
 
     def refresh_style(self):
         from styles import theme as _theme
+        from widgets.notch_ai_chat import markdown_to_rich_html
         if self.is_user:
             bg = _theme.ACCENT_COLOR
             border = "none"
@@ -325,17 +377,23 @@ class ChatBubble(QFrame):
                 border-bottom-left-radius: 3px;
             """
             
-        self.lbl_text.setStyleSheet(f"""
-            QLabel {{
-                color: {text_color};
-                font-family: {_theme.FONT_FAMILY};
-                font-size: {_theme.TASK_SIZE}px;
-                background-color: {bg};
-                border: {border};
-                {corners}
-                padding: 6px 12px;
-            }}
-        """)
+        target_labels = getattr(self, "text_labels", [])
+        for item in target_labels:
+            if isinstance(item, tuple):
+                lbl, raw_chunk = item
+                html = markdown_to_rich_html(raw_chunk, font_family=_theme.FONT_FAMILY, base_point_size=10.5, text_color=text_color)
+                lbl.setText(html)
+            else:
+                lbl = item
+            lbl.setStyleSheet(f"""
+                QLabel {{
+                    color: {text_color};
+                    background-color: {bg};
+                    border: {border};
+                    {corners}
+                    padding: 6px 12px;
+                }}
+            """)
 
 
 class AIPanel(QWidget):

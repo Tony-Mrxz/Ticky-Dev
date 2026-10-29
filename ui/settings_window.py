@@ -1,11 +1,39 @@
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent, QTimer
-from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, 
-                               QLabel, QPushButton, QGraphicsDropShadowEffect, 
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent, QTimer, QRectF, QRegularExpression
+from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, QGridLayout,
+                               QLabel, QPushButton, QGraphicsDropShadowEffect,
                                QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea,
-                               QGraphicsOpacityEffect, QComboBox)
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QKeySequence
+                               QGraphicsOpacityEffect, QComboBox, QListWidget, QListWidgetItem,
+                               QColorDialog)
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QKeySequence, QRegularExpressionValidator
 from styles import theme, qss
 from utils import config
+from utils.version import APP_VERSION
+
+class MicLevelBar(QWidget):
+    """Slim live input-level bar used to verify the selected microphone."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._level = 0.0
+        self.setFixedHeight(8)
+
+    def set_level(self, level: float) -> None:
+        self._level = max(0.0, min(1.0, level))
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = float(self.width())
+        h = float(self.height())
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 28)))
+        painter.drawRoundedRect(QRectF(1.0, 1.0, w - 2.0, h - 2.0), 4.0, 4.0)
+        if self._level > 0.004:
+            fill_w = max(6.0, (w - 2.0) * self._level)
+            painter.setBrush(QBrush(QColor(theme.ACCENT_COLOR)))
+            painter.drawRoundedRect(QRectF(1.0, 1.0, min(fill_w, w - 2.0), h - 2.0), 4.0, 4.0)
+        painter.end()
 
 class ToggleSwitch(QAbstractButton):
     toggled_state = Signal(bool)
@@ -128,8 +156,8 @@ class ColorSwatch(QPushButton):
             painter.drawEllipse(rect.adjusted(2, 2, -2, -2))
 
 
-class ThemeCard(QPushButton):
-    """Clickable theme preview card showing bg tint, panel color, and name."""
+class ThemePreview(QPushButton):
+    """Painted mock of the widget surface stack for one colour theme."""
     theme_selected = Signal(str)
 
     def __init__(self, theme_name, theme_data, is_active=False, parent=None):
@@ -137,7 +165,8 @@ class ThemeCard(QPushButton):
         self.theme_name = theme_name
         self.theme_data = theme_data
         self.is_active = is_active
-        self.setFixedSize(82, 72)
+        self.setObjectName("ThemeStylePreview")
+        self.setFixedSize(106, 72)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clicked.connect(lambda: self.theme_selected.emit(self.theme_name))
 
@@ -149,61 +178,91 @@ class ThemeCard(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        bg = QColor(self.theme_data["bg"])
-        panel = QColor(self.theme_data["main_card"])
-        accent_str = theme.ACCENT_COLOR.lstrip('#')
-        accent = QColor(
-            int(accent_str[0:2], 16),
-            int(accent_str[2:4], 16),
-            int(accent_str[4:6], 16)
-        )
+        data = self.theme_data
+        bg = QColor(data["bg"])
+        panel = QColor(data["main_card"])
+        accent = QColor(theme.ACCENT_COLOR)
+        # Neutral detail ink follows the theme's own text colour so light
+        # themes still show their mock rows.
+        ink = QColor(data.get("text_primary", theme.DARK_TEXT_PRIMARY))
 
-        # Outer border
+        def tinted(color, alpha):
+            c = QColor(color)
+            c.setAlpha(alpha)
+            return c
+
         if self.is_active:
             painter.setPen(QPen(accent, 1.5))
         else:
-            painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
+            painter.setPen(QPen(tinted(ink, 28), 1))
         painter.setBrush(bg)
         painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 8, 8)
 
-        # Simulated toolbar strip
-        toolbar_rect = self.rect().adjusted(2, 2, -2, -46)
+        # Toolbar strip with three mock icons
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(panel)
-        painter.drawRoundedRect(toolbar_rect, 6, 6)
-
-        # 3 tiny dots as toolbar icons
+        painter.drawRoundedRect(QRectF(3, 3, self.width() - 6, 16), 5, 5)
         for i in range(3):
-            painter.setBrush(QColor(255, 255, 255, 45))
-            painter.drawEllipse(8 + i * 11, 9, 6, 6)
+            painter.setBrush(tinted(ink, 70))
+            painter.drawEllipse(9 + i * 11, 8, 6, 6)
 
-        # Simulated content panel
-        content_rect = self.rect().adjusted(2, 26, -2, -18)
+        # Content panel
         painter.setBrush(panel)
-        painter.drawRoundedRect(content_rect, 5, 5)
+        painter.drawRoundedRect(QRectF(3, 22, self.width() - 6, self.height() - 25), 5, 5)
 
-        # Tiny clock line
+        # Mock clock line + sub line
         painter.setBrush(accent)
-        painter.drawRoundedRect(8, 30, 24, 3, 1, 1)
-        painter.setBrush(QColor(255, 255, 255, 40))
-        painter.drawRoundedRect(8, 36, 16, 2, 1, 1)
+        painter.drawRoundedRect(9, 29, 26, 3, 1, 1)
+        painter.setBrush(tinted(ink, 60))
+        painter.drawRoundedRect(9, 35, 17, 2, 1, 1)
 
-        # Two task rows
+        # Two mock task rows
         for i in range(2):
-            y = 44 + i * 7
+            y = 43 + i * 8
             painter.setBrush(accent)
-            painter.drawEllipse(8, y, 3, 3)
-            painter.setBrush(QColor(255, 255, 255, 35))
-            painter.drawRoundedRect(14, y, 28, 2, 1, 1)
-
-        # Theme name label at bottom
-        painter.setPen(QColor(255, 255, 255, 200) if self.is_active else QColor(255, 255, 255, 110))
-        font = QFont(theme.FONT_FAMILY, 6, QFont.Weight.Bold if self.is_active else QFont.Weight.Normal)
-        painter.setFont(font)
-        painter.drawText(self.rect().adjusted(0, 0, 0, -2), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, self.theme_name)
+            painter.drawEllipse(9, y, 3, 3)
+            painter.setBrush(tinted(ink, 55))
+            painter.drawRoundedRect(16, y, 30, 2, 1, 1)
 
 
-class ClockStyleCard(QFrame):
+class ThemeStyleCard(QWidget):
+    """Theme preview box with the theme name rendered on a line below it."""
+
+    theme_selected = Signal(str)
+
+    def __init__(self, theme_name, theme_data, is_active=False, parent=None):
+        super().__init__(parent)
+        self.theme_name = theme_name
+        self.setObjectName("ThemeStyleCard")
+        self.setFixedSize(106, 92)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.preview = ThemePreview(theme_name, theme_data, is_active, self)
+        self.preview.theme_selected.connect(self.theme_selected)
+        outer.addWidget(self.preview)
+
+        self.lbl_name = QLabel(theme_name, self)
+        self.lbl_name.setObjectName("ThemeStyleName")
+        self.lbl_name.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.lbl_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        outer.addWidget(self.lbl_name)
+
+    def setActive(self, active):
+        self.preview.setActive(active)
+        self.setProperty("active", "true" if active else "false")
+        self.lbl_name.setProperty("active", "true" if active else "false")
+        for widget in (self.lbl_name,):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+
+class ClockStyleCard(QWidget):
+    """A clock style preview box with its name rendered on a line below the box."""
+
     clicked = Signal(str)
 
     def __init__(self, style_key, display_name, time_str, date_str, time_obj_name, active=False, parent=None):
@@ -211,49 +270,43 @@ class ClockStyleCard(QFrame):
         self.style_key = style_key
         self.setObjectName("ClockStyleCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(88, 76)
+        self.setFixedSize(106, 104)
         self.setProperty("active", "true" if active else "false")
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 5, 6, 5)
-        layout.setSpacing(1)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_name = QLabel(display_name, self)
-        self.lbl_name.setObjectName("CardStyleName")
-        self.lbl_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl_name)
+        self.preview = QFrame(self)
+        self.preview.setObjectName("ClockStylePreview")
+        self.preview.setFixedSize(106, 80)
+        self.preview.setProperty("active", "true" if active else "false")
 
-        self.lbl_time = None
-        self.lbl_hours = None
-        self.lbl_mins = None
+        preview_layout = QVBoxLayout(self.preview)
+        preview_layout.setContentsMargins(8, 6, 8, 6)
+        preview_layout.setSpacing(2)
+        preview_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        if style_key == "split":
-            split_col = QVBoxLayout()
-            split_col.setSpacing(-3)
-            split_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            parts = time_str.split("\n")
-            self.lbl_hours = QLabel(parts[0], self)
-            self.lbl_hours.setObjectName("CardPreviewTimeSplit")
-            self.lbl_hours.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.lbl_mins = QLabel(parts[1] if len(parts) > 1 else "00", self)
-            self.lbl_mins.setObjectName("CardPreviewTimeSplit")
-            self.lbl_mins.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            split_col.addWidget(self.lbl_hours)
-            split_col.addWidget(self.lbl_mins)
-            layout.addLayout(split_col)
-        else:
-            self.lbl_time = QLabel(time_str, self)
-            self.lbl_time.setObjectName(time_obj_name)
-            self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.lbl_time)
+        self.lbl_time = QLabel(time_str, self.preview)
+        self.lbl_time.setObjectName(time_obj_name)
+        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_layout.addWidget(self.lbl_time)
 
-        self.lbl_date = QLabel(date_str, self)
+        self.lbl_date = QLabel(date_str, self.preview)
         self.lbl_date.setObjectName("CardPreviewDate")
         self.lbl_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if not date_str:
             self.lbl_date.hide()
-        layout.addWidget(self.lbl_date)
+        preview_layout.addWidget(self.lbl_date)
+
+        outer.addWidget(self.preview)
+
+        self.lbl_name = QLabel(display_name, self)
+        self.lbl_name.setObjectName("CardStyleName")
+        self.lbl_name.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.lbl_name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        outer.addWidget(self.lbl_name)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -263,13 +316,12 @@ class ClockStyleCard(QFrame):
             super().mousePressEvent(event)
 
     def setActive(self, active):
-        self.setProperty("active", "true" if active else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
-        for lbl in (self.lbl_name, self.lbl_time, self.lbl_date, self.lbl_hours, self.lbl_mins):
-            if lbl:
-                lbl.style().unpolish(lbl)
-                lbl.style().polish(lbl)
+        value = "true" if active else "false"
+        self.setProperty("active", value)
+        self.preview.setProperty("active", value)
+        for widget in (self, self.preview, self.lbl_name, self.lbl_time, self.lbl_date):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
         self.update()
 
 
@@ -323,8 +375,8 @@ class SettingsWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
         # Set window icon
-        from utils.icon import create_ticky_icon
-        self.setWindowIcon(create_ticky_icon())
+        from utils.icon import load_ticky_icon
+        self.setWindowIcon(load_ticky_icon())
         
         self.parent_window = parent
         self.selected_font = config.load_font_family("Inter")
@@ -340,12 +392,12 @@ class SettingsWindow(QWidget):
 
     def init_ui(self):
         # Increased window size to landscape orientation for sidebar dashboard layout
-        self.setFixedSize(680, 560)
-        
+        self.setFixedSize(960, 680)
+
         # Main Outer Container Frame
         self.container = QFrame(self)
         self.container.setObjectName("SettingsWindowContainer")
-        self.container.setFixedSize(680, 560)
+        self.container.setFixedSize(960, 680)
         
         main_layout = QHBoxLayout(self.container)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -354,10 +406,10 @@ class SettingsWindow(QWidget):
         # 1. Left Sidebar layout panel
         self.sidebar = QFrame(self.container)
         self.sidebar.setObjectName("SettingsSidebar")
-        self.sidebar.setFixedWidth(155)
+        self.sidebar.setFixedWidth(190)
         
         sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(10, 16, 10, 16)
+        sidebar_layout.setContentsMargins(12, 12, 12, 12)
         sidebar_layout.setSpacing(6)
         sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
@@ -366,15 +418,33 @@ class SettingsWindow(QWidget):
         sidebar_title.setObjectName("SidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
         
+        # Settings search bar (filters all pages, results replace the buttons while typing)
+        self.search_edit = QLineEdit(self.sidebar)
+        self.search_edit.setObjectName("SidebarSearch")
+        self.search_edit.setPlaceholderText("Search settings…")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setFixedHeight(30)
+        self.search_edit.textChanged.connect(self._on_settings_search)
+        sidebar_layout.addWidget(self.search_edit)
+        
+        self.search_results = QListWidget(self.sidebar)
+        self.search_results.setObjectName("SidebarSearchResults")
+        self.search_results.setFixedHeight(320)
+        self.search_results.setVisible(False)
+        self.search_results.itemClicked.connect(self._on_search_result_clicked)
+        sidebar_layout.addWidget(self.search_results)
+        
+        # Buttons sit below the search bar (small top gap, more room kept at the bottom)
+        sidebar_layout.addStretch(1)
+        
         self.sidebar_buttons = []
         sidebar_items = [
             ("General", 0),
-            ("Fonts", 1),
-            ("Clock", 2),
-            ("Appearance", 3),
-            ("Spotify", 4),
-            ("AI Chat", 5),
-            ("Shortcuts", 6)
+            ("Clock", 1),
+            ("Appearance", 2),
+            ("Media Player", 3),
+            ("AI Config", 4),
+            ("Shortcuts", 5)
         ]
         
         for name, idx in sidebar_items:
@@ -386,7 +456,7 @@ class SettingsWindow(QWidget):
             sidebar_layout.addWidget(btn)
             self.sidebar_buttons.append(btn)
             
-        sidebar_layout.addStretch()
+        sidebar_layout.addStretch(2)
         main_layout.addWidget(self.sidebar)
         
         # 2. Right settings content page panel
@@ -395,22 +465,40 @@ class SettingsWindow(QWidget):
         content_layout.setContentsMargins(18, 16, 18, 16)
         content_layout.setSpacing(10)
         
-        # Header title bar inside content panel
-        title_layout = QHBoxLayout()
+        # Header title bar inside content panel (fixed height so it can't absorb slack)
+        header_bar = QWidget(content_widget)
+        header_bar.setFixedHeight(38)
+        title_layout = QHBoxLayout(header_bar)
         title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(8)
         
-        self.lbl_page_title = QLabel("General Settings", content_widget)
+        # Invisible spacer mirrors the close button width so the pill stays exactly centered
+        title_spacer = QWidget(header_bar)
+        title_spacer.setFixedSize(30, 30)
+        
+        self.title_pill = QFrame(header_bar)
+        self.title_pill.setObjectName("PageTitlePill")
+        self.title_pill.setFixedSize(320, 38)
+        pill_layout = QHBoxLayout(self.title_pill)
+        pill_layout.setContentsMargins(16, 7, 16, 7)
+        
+        self.lbl_page_title = QLabel("General Settings", self.title_pill)
         self.lbl_page_title.setObjectName("SettingsTitle")
+        self.lbl_page_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pill_layout.addWidget(self.lbl_page_title)
         
-        close_btn = QPushButton("×", content_widget)
+        close_btn = QPushButton("×", header_bar)
         close_btn.setObjectName("SettingsCloseButton")
+        close_btn.setFixedSize(30, 30)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close)
         
-        title_layout.addWidget(self.lbl_page_title)
-        title_layout.addStretch()
-        title_layout.addWidget(close_btn)
-        content_layout.addLayout(title_layout)
+        title_layout.addWidget(title_spacer)
+        title_layout.addStretch(1)
+        title_layout.addWidget(self.title_pill)
+        title_layout.addStretch(1)
+        title_layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignTop)
+        content_layout.addWidget(header_bar)
         
         # Separator line
         sep = QWidget(content_widget)
@@ -420,7 +508,7 @@ class SettingsWindow(QWidget):
         
         # Stacked Widget for pages
         self.stacked_widget = QStackedWidget(content_widget)
-        self.stacked_widget.setFixedHeight(310)
+        self.stacked_widget.setMinimumHeight(310)
         
         # Opacity effect for page transitions
         self.opacity_effect = QGraphicsOpacityEffect(self.stacked_widget)
@@ -488,21 +576,10 @@ class SettingsWindow(QWidget):
         self.switch_sos.setChecked(config.load_start_on_startup())
         _add_gen_row(window_inner, "Start on Startup", "Open Ticky automatically when you sign in", self.switch_sos)
         
-        _add_divider(window_inner)
-        
-        self.switch_pin = ToggleSwitch(window_section)
-        self.switch_pin.setChecked(config.load_pin_position())
-        _add_gen_row(window_inner, "Pin Position", "Lock window position and disable dragging", self.switch_pin)
-        
-        _add_divider(window_inner)
-        
-        self.switch_sod = ToggleSwitch(window_section)
-        self.switch_sod.setChecked(config.load_stick_on_desktop())
-        _add_gen_row(window_inner, "Stick on Desktop", "Pin Ticky to the background behind windows", self.switch_sod)
-        
         # Display Card
         display_section = QFrame(gen_content)
         display_section.setObjectName("SettingSection")
+
         display_inner = QVBoxLayout(display_section)
         display_inner.setContentsMargins(12, 10, 12, 10)
         display_inner.setSpacing(0)
@@ -516,74 +593,6 @@ class SettingsWindow(QWidget):
         self.switch_dat = ToggleSwitch(display_section)
         self.switch_dat.setChecked(config.load_show_date())
         _add_gen_row(display_inner, "Show Date", "Display date under the clock", self.switch_dat)
-        
-        # Idle minimize card
-        idle_section = QFrame(gen_content)
-        idle_section.setObjectName("SettingSection")
-        idle_inner = QVBoxLayout(idle_section)
-        idle_inner.setContentsMargins(12, 10, 12, 10)
-        idle_inner.setSpacing(0)
-        
-        idle_row = QHBoxLayout()
-        idle_row.setContentsMargins(0, 8, 0, 8)
-        idle_text_col = QVBoxLayout()
-        idle_text_col.setSpacing(1)
-        self.lbl_moi = QLabel("Minimize on Inactivity", idle_section)
-        self.lbl_moi.setObjectName("SettingLabel")
-        self.lbl_moi_desc = QLabel("Auto-minimize to a floating ball after minutes", idle_section)
-        self.lbl_moi_desc.setObjectName("SettingDescription")
-        idle_text_col.addWidget(self.lbl_moi)
-        idle_text_col.addWidget(self.lbl_moi_desc)
-        idle_row.addLayout(idle_text_col, 1)
-        
-        from PySide6.QtWidgets import QSpinBox
-        self.spin_idle_minutes = QSpinBox(idle_section)
-        self.spin_idle_minutes.setRange(1, 60)
-        self.spin_idle_minutes.setSuffix(" min")
-        self.spin_idle_minutes.setValue(config.load_idle_minutes())
-        self.spin_idle_minutes.setFixedWidth(70)
-        self.spin_idle_minutes.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.spin_idle_minutes.setObjectName("SettingSpinBox")
-        self.spin_idle_minutes.setStyleSheet(f"""
-            QSpinBox#SettingSpinBox {{
-                background-color: {theme.MAIN_CARD_COLOR};
-                color: {theme.TEXT_PRIMARY};
-                border: 1px solid {theme.BORDER_COLOR};
-                border-radius: 6px;
-                padding: 3px 6px;
-                font-family: {theme.FONT_FAMILY};
-                font-size: 11px;
-            }}
-            QSpinBox#SettingSpinBox::up-button, QSpinBox#SettingSpinBox::down-button {{
-                width: 0px;
-            }}
-            QSpinBox#SettingSpinBox:disabled {{
-                background-color: transparent;
-                color: rgba(255, 255, 255, 0.15);
-                border: 1px solid rgba(255, 255, 255, 0.05);
-            }}
-        """)
-        
-        self.switch_minimize_idle = ToggleSwitch(idle_section)
-        self.switch_minimize_idle.setChecked(config.load_minimize_on_idle())
-        
-        aot_on = self.switch_aot.isChecked()
-        self.switch_minimize_idle.setEnabled(aot_on)
-        self.spin_idle_minutes.setEnabled(aot_on)
-        self.lbl_moi.setEnabled(aot_on)
-        self.lbl_moi_desc.setEnabled(aot_on)
-        if not aot_on:
-            self.switch_minimize_idle.setChecked(False)
-            
-        controls_layout = QHBoxLayout()
-        controls_layout.setSpacing(10)
-        controls_layout.addWidget(self.spin_idle_minutes)
-        controls_layout.addWidget(self.switch_minimize_idle)
-        idle_row.addLayout(controls_layout, 0)
-        idle_inner.addLayout(idle_row)
-        
-        self.switch_aot.toggled_state.connect(self.on_aot_toggled)
-        self.switch_sod.toggled_state.connect(self.on_sod_toggled)
         
         # Privacy & Streaming Card
         streaming_section = QFrame(gen_content)
@@ -602,6 +611,40 @@ class SettingsWindow(QWidget):
             self.switch_hide_streaming
         )
 
+        # Updates Card
+        updates_section = QFrame(gen_content)
+        updates_section.setObjectName("SettingSection")
+        updates_inner = QVBoxLayout(updates_section)
+        updates_inner.setContentsMargins(12, 10, 12, 10)
+        updates_inner.setSpacing(0)
+
+        self.switch_update_notify = ToggleSwitch(updates_section)
+        self.switch_update_notify.setChecked(config.load_check_for_updates())
+        _add_gen_row(
+            updates_inner,
+            "Check for updates on startup",
+            "Ask GitHub for a newer release when Ticky starts.",
+            self.switch_update_notify
+        )
+
+        _add_divider(updates_inner)
+
+        self.btn_check_updates = QPushButton("Check now", updates_section)
+        self.btn_check_updates.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_check_updates.setStyleSheet(self.get_action_button_style())
+        self.btn_check_updates.clicked.connect(self.check_for_updates_now)
+        _add_gen_row(
+            updates_inner,
+            f"Version {APP_VERSION}",
+            "Compare with the newest published release.",
+            self.btn_check_updates
+        )
+
+        self.lbl_update_status = QLabel("", updates_section)
+        self.lbl_update_status.setObjectName("SettingDescription")
+        self.lbl_update_status.setWordWrap(True)
+        updates_inner.addWidget(self.lbl_update_status)
+
         lbl_sys_title = QLabel("System & Behavior", gen_content)
         lbl_sys_title.setObjectName("SettingSectionTitle")
         gen_content_layout.addWidget(lbl_sys_title)
@@ -611,16 +654,17 @@ class SettingsWindow(QWidget):
         lbl_streaming_title.setObjectName("SettingSectionTitle")
         gen_content_layout.addWidget(lbl_streaming_title)
         gen_content_layout.addWidget(streaming_section)
+
         
         lbl_disp_title = QLabel("Display Options", gen_content)
         lbl_disp_title.setObjectName("SettingSectionTitle")
         gen_content_layout.addWidget(lbl_disp_title)
         gen_content_layout.addWidget(display_section)
-        
-        lbl_inact_title = QLabel("Inactivity Control", gen_content)
-        lbl_inact_title.setObjectName("SettingSectionTitle")
-        gen_content_layout.addWidget(lbl_inact_title)
-        gen_content_layout.addWidget(idle_section)
+
+        lbl_updates_title = QLabel("Updates", gen_content)
+        lbl_updates_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_updates_title)
+        gen_content_layout.addWidget(updates_section)
         gen_content_layout.addStretch()
         
         gen_scroll.setWidget(gen_content)
@@ -634,55 +678,7 @@ class SettingsWindow(QWidget):
         
         self.stacked_widget.addWidget(page_general)
         
-        # --- Page 2: Fonts Selection ---
-        page_fonts = QWidget()
-        page_fonts_layout = QVBoxLayout(page_fonts)
-        page_fonts_layout.setContentsMargins(0, 0, 0, 0)
-        page_fonts_layout.setSpacing(10)
-        
-        lbl_fonts_desc = QLabel("Select active application typeface family:", page_fonts)
-        lbl_fonts_desc.setObjectName("SettingDescription")
-        page_fonts_layout.addWidget(lbl_fonts_desc)
-        
-        scroll_area = QScrollArea(page_fonts)
-        scroll_area.setObjectName("FontsScrollArea")
-        scroll_area.setWidgetResizable(True)
-        
-        scroll_content = QWidget()
-        scroll_content.setObjectName("ScrollContent")
-        scroll_content_layout = QVBoxLayout(scroll_content)
-        scroll_content_layout.setContentsMargins(0, 0, 4, 0)
-        scroll_content_layout.setSpacing(6)
-        
-        fonts_list = [
-            "Inter", "Manrope", "Nunito", "DM Sans", "General Sans",
-            "Satoshi", "Plus Jakarta Sans", "Outfit", "IBM Plex Sans", "Space Grotesk"
-        ]
-        
-        self.font_buttons = []
-        for font_name in fonts_list:
-            btn_font = QPushButton(font_name, scroll_content)
-            btn_font.setObjectName("FontItemButton")
-            btn_font.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_font.setFont(QFont(font_name, 10, QFont.Weight.Medium))
-            is_active = (font_name.lower() == self.selected_font.lower())
-            btn_font.setProperty("active", "true" if is_active else "false")
-            btn_font.clicked.connect(lambda checked=False, f=font_name: self.on_font_selected(f))
-            scroll_content_layout.addWidget(btn_font)
-            self.font_buttons.append(btn_font)
-            
-        scroll_area.setWidget(scroll_content)
-        page_fonts_layout.addWidget(scroll_area)
-        
-        self.btn_save_fonts = QPushButton("Save Font", page_fonts)
-        self.btn_save_fonts.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save_fonts.setStyleSheet(self.get_action_button_style())
-        self.btn_save_fonts.clicked.connect(self.save_font_settings)
-        page_fonts_layout.addWidget(self.btn_save_fonts)
-        
-        self.stacked_widget.addWidget(page_fonts)
-        
-        # --- Page 3: Clock Style ---
+        # --- Page 2: Clock Style ---
         page_clock = QWidget()
         clock_page_layout = QVBoxLayout(page_clock)
         clock_page_layout.setContentsMargins(0, 0, 0, 0)
@@ -711,15 +707,15 @@ class SettingsWindow(QWidget):
         cards_scroll.setObjectName("CardsScrollArea")
         cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        cards_scroll.setFixedHeight(88)
+        cards_scroll.setFixedHeight(116)
         cards_scroll.setWidgetResizable(True)
 
         cards_row = QWidget()
         cards_row.setObjectName("CardsRow")
-        cards_row.setMinimumWidth(468)
+        cards_row.setMinimumWidth(446)
         cards_row_layout = QHBoxLayout(cards_row)
         cards_row_layout.setContentsMargins(2, 2, 2, 2)
-        cards_row_layout.setSpacing(6)
+        cards_row_layout.setSpacing(8)
         cards_row_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self.clock_style_cards = {}
@@ -727,7 +723,6 @@ class SettingsWindow(QWidget):
 
         clock_style_defs = [
             ("classic", "Classic",  "08:13",   "THU, JUL 10",  "CardPreviewTime"),
-            ("split",   "Split",    "08\n13",   "THU / JUL 10", "CardPreviewTime"),
             ("casio",   "Casio",    "08:13",    "THU  JUL 10",  "CardPreviewTimeCasio"),
             ("minimal", "Minimal",  "08:13",    "",             "CardPreviewTime"),
             ("neon",    "Neon",     "08:13",    "THU, JUL 10",  "CardPreviewTimeNeon"),
@@ -860,27 +855,14 @@ class SettingsWindow(QWidget):
         lbl_col_desc.setObjectName("SettingDescription")
         accent_inner.addWidget(lbl_col)
         accent_inner.addWidget(lbl_col_desc)
-        
+
         swatches_layout = QHBoxLayout()
         swatches_layout.setSpacing(8)
         swatches_layout.setContentsMargins(0, 0, 0, 0)
         swatches_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        
+
         self.swatches = []
-        colors = [
-            "#4CC2FF",  # Ice Blue
-            "#38BDF8",  # Sky
-            "#0A84FF",  # Deep Blue
-            "#5E5CE6",  # Indigo
-            "#BF5AF2",  # Violet
-            "#FF375F",  # Hot Pink
-            "#FF6B6B",  # Coral
-            "#FF453A",  # Red
-            "#FF9F0A",  # Orange
-            "#FFD60A",  # Yellow
-            "#30D158",  # Green
-            "#00C9A7",  # Teal
-        ]
+        colors = theme.ACCENT_PRESETS
         current_accent = config.load_accent_color()
         for hex_color in colors:
             is_active = (hex_color.lower() == current_accent.lower())
@@ -888,8 +870,48 @@ class SettingsWindow(QWidget):
             swatch.color_selected.connect(self.on_accent_color_changed)
             swatches_layout.addWidget(swatch)
             self.swatches.append(swatch)
-            
+
         accent_inner.addLayout(swatches_layout)
+
+        # --- Custom accent: colour picker + hex input ---
+        custom_row = QHBoxLayout()
+        custom_row.setSpacing(8)
+        custom_row.setContentsMargins(0, 2, 0, 0)
+
+        self.btn_custom_accent = QPushButton(accent_section)
+        self.btn_custom_accent.setObjectName("AccentCustomSwatch")
+        self.btn_custom_accent.setFixedSize(26, 26)
+        self.btn_custom_accent.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_custom_accent.setToolTip("Pick a custom accent color")
+        self.btn_custom_accent.clicked.connect(self.pick_custom_accent)
+
+        lbl_custom = QLabel("Custom", accent_section)
+        lbl_custom.setObjectName("SettingDescription")
+
+        self.hex_accent_input = QLineEdit(accent_section)
+        self.hex_accent_input.setObjectName("AccentHexInput")
+        self.hex_accent_input.setFixedSize(92, 26)
+        self.hex_accent_input.setMaxLength(7)
+        self.hex_accent_input.setPlaceholderText("#RRGGBB")
+        self.hex_accent_input.setText(current_accent.upper())
+        self.hex_accent_input.setValidator(QRegularExpressionValidator(QRegularExpression("#?[0-9A-Fa-f]{0,6}"), self))
+        self.hex_accent_input.textChanged.connect(self._update_custom_accent_preview)
+        self.hex_accent_input.returnPressed.connect(self.apply_hex_accent)
+
+        btn_hex_apply = QPushButton("Apply", accent_section)
+        btn_hex_apply.setObjectName("AccentHexApply")
+        btn_hex_apply.setFixedHeight(26)
+        btn_hex_apply.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_hex_apply.clicked.connect(self.apply_hex_accent)
+
+        custom_row.addWidget(self.btn_custom_accent)
+        custom_row.addWidget(lbl_custom)
+        custom_row.addSpacing(6)
+        custom_row.addWidget(self.hex_accent_input)
+        custom_row.addWidget(btn_hex_apply)
+        custom_row.addStretch()
+        accent_inner.addLayout(custom_row)
+        self._update_custom_accent_preview(self.hex_accent_input.text())
         
         size_section = QFrame(tasks_content)
         size_section.setObjectName("SettingSection")
@@ -948,35 +970,69 @@ class SettingsWindow(QWidget):
         theme_inner.addWidget(lbl_theme_desc)
 
         self.theme_cards = {}
-        current_theme_name = config.load_theme("Obsidian")
+        current_theme_name = config.load_theme("Amoled Pure")
 
-        # Row 1 — first 3 themes
-        theme_row1 = QHBoxLayout()
-        theme_row1.setSpacing(8)
-        theme_row1.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        # Row 2 — remaining themes
-        theme_row2 = QHBoxLayout()
-        theme_row2.setSpacing(8)
-        theme_row2.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        theme_grid = QGridLayout()
+        theme_grid.setSpacing(8)
+        theme_grid.setContentsMargins(0, 0, 0, 0)
 
         for i, (t_name, t_data) in enumerate(theme.THEMES.items()):
             is_active = (t_name == current_theme_name)
-            card = ThemeCard(t_name, t_data, is_active, theme_section)
+            card = ThemeStyleCard(t_name, t_data, is_active, theme_section)
             card.theme_selected.connect(self.on_theme_changed)
             self.theme_cards[t_name] = card
-            if i < 3:
-                theme_row1.addWidget(card)
-            else:
-                theme_row2.addWidget(card)
+            theme_grid.addWidget(card, i // 5, i % 5, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        theme_inner.addLayout(theme_row1)
-        theme_inner.addLayout(theme_row2)
+        theme_inner.addLayout(theme_grid)
         tasks_content_layout.addWidget(theme_section)
 
         lbl_text_title = QLabel("Text Configuration", tasks_content)
         lbl_text_title.setObjectName("SettingSectionTitle")
         tasks_content_layout.addWidget(lbl_text_title)
         tasks_content_layout.addWidget(size_section)
+        
+        # Font Family selection (merged from the former Fonts page)
+        lbl_font_title = QLabel("Font Family", tasks_content)
+        lbl_font_title.setObjectName("SettingSectionTitle")
+        tasks_content_layout.addWidget(lbl_font_title)
+        
+        font_section = QFrame(tasks_content)
+        font_section.setObjectName("SettingSection")
+        font_inner = QVBoxLayout(font_section)
+        font_inner.setContentsMargins(12, 10, 12, 10)
+        font_inner.setSpacing(8)
+        
+        lbl_fonts_desc = QLabel("Select active application typeface family:", font_section)
+        lbl_fonts_desc.setObjectName("SettingDescription")
+        font_inner.addWidget(lbl_fonts_desc)
+        
+        fonts_list = [
+            "Inter", "Manrope", "Nunito", "DM Sans", "General Sans",
+            "Satoshi", "Plus Jakarta Sans", "Outfit", "IBM Plex Sans", "Space Grotesk"
+        ]
+        
+        font_grid = QGridLayout()
+        font_grid.setSpacing(6)
+        self.font_buttons = []
+        for i, font_name in enumerate(fonts_list):
+            btn_font = QPushButton(font_name, font_section)
+            btn_font.setObjectName("FontItemButton")
+            btn_font.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_font.setFont(QFont(font_name, 10, QFont.Weight.Medium))
+            is_active = (font_name.lower() == self.selected_font.lower())
+            btn_font.setProperty("active", "true" if is_active else "false")
+            btn_font.clicked.connect(lambda checked=False, f=font_name: self.on_font_selected(f))
+            font_grid.addWidget(btn_font, i // 2, i % 2)
+            self.font_buttons.append(btn_font)
+        font_inner.addLayout(font_grid)
+        
+        self.btn_save_fonts = QPushButton("Save Font", font_section)
+        self.btn_save_fonts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save_fonts.setStyleSheet(self.get_action_button_style())
+        self.btn_save_fonts.clicked.connect(self.save_font_settings)
+        font_inner.addWidget(self.btn_save_fonts)
+        
+        tasks_content_layout.addWidget(font_section)
         
         lbl_dynamic_save_notice = QLabel("💡 Colors, themes and font sizes are saved dynamically.", tasks_content)
         lbl_dynamic_save_notice.setObjectName("SettingDescription")
@@ -1058,25 +1114,6 @@ class SettingsWindow(QWidget):
         self.lbl_spot_status = QLabel("● Automatic Media Integration Active", status_section)
         self.lbl_spot_status.setObjectName("SettingDescription")
         status_inner.addWidget(self.lbl_spot_status)
-        
-        demo_row = QHBoxLayout()
-        demo_row.setContentsMargins(0, 4, 0, 4)
-        demo_text_col = QVBoxLayout()
-        demo_text_col.setSpacing(2)
-        lbl_demo = QLabel("Spotify Demo Mode", status_section)
-        lbl_demo.setObjectName("SettingLabel")
-        lbl_demo_desc = QLabel("Simulate playback without any media playing", status_section)
-        lbl_demo_desc.setObjectName("SettingDescription")
-        demo_text_col.addWidget(lbl_demo)
-        demo_text_col.addWidget(lbl_demo_desc)
-        
-        self.switch_demo = ToggleSwitch(status_section)
-        self.switch_demo.setChecked(config.load_spotify_demo_mode())
-        self.switch_demo.toggled_state.connect(self.on_demo_mode_toggled)
-        
-        demo_row.addLayout(demo_text_col, 1)
-        demo_row.addWidget(self.switch_demo, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        status_inner.addLayout(demo_row)
         
         self.lbl_spotify_guide = QLabel(
             "<b>Automatic (Windows Media):</b><br>"
@@ -1282,9 +1319,81 @@ class SettingsWindow(QWidget):
         self.input_ai_model.setPlaceholderText("e.g. gemini-1.5-flash")
         self.input_ai_model.setText(config.load_ai_model())
         ai_creds_inner.addWidget(self.input_ai_model)
-        
+
+        # Voice Dictation section (microphone selection)
+        dictation_section = QFrame(ai_content)
+        dictation_section.setObjectName("SettingSection")
+        dictation_inner = QVBoxLayout(dictation_section)
+        dictation_inner.setContentsMargins(12, 10, 12, 10)
+
+        mic_row = QHBoxLayout()
+        lbl_mic = QLabel("Microphone:", dictation_section)
+        lbl_mic.setObjectName("SettingLabel")
+        lbl_mic.setStyleSheet("font-weight: bold; font-size: 11px;")
+
+        from PySide6.QtMultimedia import QMediaDevices
+        self._media_devices = QMediaDevices(self)
+        self.combo_mic = QComboBox(dictation_section)
+        self.combo_mic.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(0, 0, 0, 60);
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                padding: 4px 8px;
+                min-width: 180px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+        """)
+        self.combo_mic.addItem("System Default", "")
+        for dev in self._media_devices.audioInputs():
+            self.combo_mic.addItem(dev.description(), dev.id())
+        saved_mic = config.load_mic_device_id("")
+        saved_idx = self.combo_mic.findData(saved_mic)
+        self.combo_mic.setCurrentIndex(saved_idx if saved_idx >= 0 else 0)
+        self.combo_mic.currentIndexChanged.connect(self.on_mic_changed)
+
+        mic_row.addWidget(lbl_mic)
+        mic_row.addWidget(self.combo_mic, 0, Qt.AlignmentFlag.AlignRight)
+        dictation_inner.addLayout(mic_row)
+
+        lbl_mic_hint = QLabel(
+            "Used by Voice Dictation (global hotkey). Pick a specific mic, or System Default.",
+            dictation_section
+        )
+        lbl_mic_hint.setObjectName("SettingDescription")
+        lbl_mic_hint.setWordWrap(True)
+        lbl_mic_hint.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 9px;")
+        dictation_inner.addWidget(lbl_mic_hint)
+
+        # Live input level meter — lets the user SEE which mic hears them
+        self.mic_level_bar = MicLevelBar(dictation_section)
+        dictation_inner.addWidget(self.mic_level_bar)
+        lbl_meter_hint = QLabel(
+            "Speak into your mic — this bar should move. If it stays flat while you talk, "
+            "your voice is going to a different device: pick that one above.",
+            dictation_section
+        )
+        lbl_meter_hint.setObjectName("SettingDescription")
+        lbl_meter_hint.setWordWrap(True)
+        lbl_meter_hint.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 9px;")
+        dictation_inner.addWidget(lbl_meter_hint)
+
+        self._meter_source = None
+        self._meter_io = None
+        self._meter_fmt = None
+        self._meter_level = 0.0
+        self._meter_timer = QTimer(self)
+        self._meter_timer.setInterval(50)
+        self._meter_timer.timeout.connect(self._tick_mic_meter)
+
         ai_content_layout.addWidget(ai_guide_section)
         ai_content_layout.addWidget(ai_creds_section)
+        ai_content_layout.addWidget(dictation_section)
         ai_content_layout.addStretch()
         
         ai_scroll.setWidget(ai_content)
@@ -1334,6 +1443,7 @@ class SettingsWindow(QWidget):
         lbl_shortcuts_guide_desc = QLabel(
             "Configure global hotkeys to control Ticky from anywhere on your system.<br>"
             "Click on an input box and press your key combination (e.g. <b>Alt+T</b>).<br>"
+            "Voice Dictation expands the Notch, listens via your mic, and inserts speech into the focused text field.<br>"
             "Press <b>Backspace</b> or <b>Delete</b> to clear a shortcut.",
             shortcuts_guide_section
         )
@@ -1380,11 +1490,49 @@ class SettingsWindow(QWidget):
         row2.addWidget(lbl_new_task)
         row2.addWidget(self.input_new_task_shortcut, 0, Qt.AlignmentFlag.AlignRight)
         inputs_inner.addLayout(row2)
+
+        # Spacer Line
+        sep_sc2 = QFrame(inputs_section)
+        sep_sc2.setObjectName("SettingRowDivider")
+        sep_sc2.setFixedHeight(1)
+        inputs_inner.addWidget(sep_sc2)
+
+        # 3. Voice Dictation Shortcut Row
+        row3 = QHBoxLayout()
+        lbl_dictation = QLabel("Voice Dictation:", inputs_section)
+        lbl_dictation.setObjectName("SettingLabel")
+        lbl_dictation.setStyleSheet("font-weight: bold; font-size: 11px;")
+
+        self.input_voice_dictation_shortcut = ShortcutLineEdit(inputs_section)
+        self.input_voice_dictation_shortcut.setFixedWidth(180)
+        row3.addWidget(lbl_dictation)
+        row3.addWidget(self.input_voice_dictation_shortcut, 0, Qt.AlignmentFlag.AlignRight)
+        inputs_inner.addLayout(row3)
+
+        sep_sc3 = QFrame(inputs_section)
+        sep_sc3.setFrameShape(QFrame.Shape.HLine)
+        sep_sc3.setFrameShadow(QFrame.Shadow.Sunken)
+        sep_sc3.setStyleSheet(f"background-color: {theme.BORDER_COLOR}; max-height: 1px;")
+        inputs_inner.addWidget(sep_sc3)
+
+        # 4. System-Wide App Search Shortcut Row
+        row4 = QHBoxLayout()
+        lbl_app_search = QLabel("App & Software Search:", inputs_section)
+        lbl_app_search.setObjectName("SettingLabel")
+        lbl_app_search.setStyleSheet("font-weight: bold; font-size: 11px;")
+
+        self.input_app_search_shortcut = ShortcutLineEdit(inputs_section)
+        self.input_app_search_shortcut.setFixedWidth(180)
+        row4.addWidget(lbl_app_search)
+        row4.addWidget(self.input_app_search_shortcut, 0, Qt.AlignmentFlag.AlignRight)
+        inputs_inner.addLayout(row4)
         
         # Load values
         saved_shortcuts = config.load_shortcuts()
         self.input_toggle_shortcut.setText(saved_shortcuts.get("toggle_window", "Alt+T"))
         self.input_new_task_shortcut.setText(saved_shortcuts.get("new_task", "Alt+Q"))
+        self.input_voice_dictation_shortcut.setText(saved_shortcuts.get("voice_dictation", "Alt+D"))
+        self.input_app_search_shortcut.setText(saved_shortcuts.get("app_search", "Alt+W"))
         
         shortcut_content_layout.addWidget(shortcuts_guide_section)
         shortcut_content_layout.addWidget(inputs_section)
@@ -1406,7 +1554,7 @@ class SettingsWindow(QWidget):
         # Initialize dynamic welcome guide
         self.on_ai_provider_changed(self.combo_provider.currentText())
         
-        content_layout.addWidget(self.stacked_widget)
+        content_layout.addWidget(self.stacked_widget, 1)
         
         # Separator line before exit button
         sep2 = QWidget(content_widget)
@@ -1448,7 +1596,7 @@ class SettingsWindow(QWidget):
         
         # Temporarily disable global hotkeys when entering the shortcuts page to prevent actions triggering
         if self.parent_window:
-            if index == 6:
+            if index == 5:
                 if hasattr(self.parent_window, 'unregister_global_hotkeys'):
                     self.parent_window.unregister_global_hotkeys()
             else:
@@ -1456,7 +1604,7 @@ class SettingsWindow(QWidget):
                     self.parent_window.register_global_hotkeys()
         
         # Update page header title
-        titles = ["General Settings", "Typography Font Selection", "Clock Style Customization", "Appearance", "Spotify Integration", "AI Integration", "Keyboard Shortcuts"]
+        titles = ["General Settings", "Clock Style Customization", "Appearance", "Media Player", "AI Config", "Keyboard Shortcuts"]
         self.lbl_page_title.setText(titles[index])
         
         # Update sidebar buttons style
@@ -1472,6 +1620,63 @@ class SettingsWindow(QWidget):
             self.page_fade_anim.setStartValue(0.0)
             self.page_fade_anim.setEndValue(1.0)
             self.page_fade_anim.start()
+
+    def _get_searchable_labels(self):
+        """Lazily index every section/setting label on each page for the sidebar search."""
+        if getattr(self, "_search_index_cache", None) is not None:
+            return self._search_index_cache
+        entries = []
+        seen = set()
+        for page_idx in range(self.stacked_widget.count()):
+            page = self.stacked_widget.widget(page_idx)
+            if page is None:
+                continue
+            category = self.sidebar_buttons[page_idx].text() if page_idx < len(self.sidebar_buttons) else ""
+            key = (category.lower(), page_idx)
+            if key not in seen:
+                seen.add(key)
+                entries.append((category, page_idx, category))
+            for lbl in page.findChildren(QLabel):
+                if lbl.objectName() not in ("SettingSectionTitle", "SettingLabel"):
+                    continue
+                text = lbl.text().strip()
+                if not text:
+                    continue
+                key = (text.lower(), page_idx)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entries.append((text, page_idx, category))
+        self._search_index_cache = entries
+        return entries
+
+    def _on_settings_search(self, text):
+        term = text.strip().lower()
+        if not term:
+            self.search_results.clear()
+            self.search_results.setVisible(False)
+            for btn in self.sidebar_buttons:
+                btn.setVisible(True)
+            return
+        for btn in self.sidebar_buttons:
+            btn.setVisible(False)
+        self.search_results.clear()
+        matches = [(label, page, cat) for label, page, cat in self._get_searchable_labels()
+                   if term in label.lower()][:40]
+        for label, page, cat in matches:
+            item = QListWidgetItem(f"{label}  ·  {cat}")
+            item.setData(Qt.ItemDataRole.UserRole, page)
+            self.search_results.addItem(item)
+        row_h = self.search_results.sizeHintForRow(0) if self.search_results.count() else 30
+        self.search_results.setFixedHeight(min(320, self.search_results.count() * (row_h + 2) + 6))
+        self.search_results.setVisible(True)
+
+    def _on_search_result_clicked(self, item):
+        page = item.data(Qt.ItemDataRole.UserRole)
+        if page is None:
+            return
+        self.switch_page(int(page))
+        self.search_edit.clear()
 
     def get_action_button_style(self):
         """Return the standard visual stylesheet for general action buttons."""
@@ -1502,7 +1707,7 @@ class SettingsWindow(QWidget):
         self.btn_weight_bold.style().unpolish(self.btn_weight_bold)
         self.btn_weight_bold.style().polish(self.btn_weight_bold)
         preview_style = qss.get_clock_preview_card_style(weight)
-        self.setStyleSheet(qss.get_settings_style() + preview_style)
+        self.setStyleSheet(qss.get_settings_style() + qss.get_appearance_style() + preview_style)
 
     def on_font_selected(self, font_name):
         """Triggered when a font item is clicked in the Fonts scroll content list."""
@@ -1536,6 +1741,7 @@ class SettingsWindow(QWidget):
     def update_settings_style(self):
         self.setStyleSheet(
             qss.get_settings_style()
+            + qss.get_appearance_style()
             + qss.get_clock_preview_card_style(self.clock_weight)
         )
         self._refresh_action_buttons()
@@ -1566,25 +1772,6 @@ class SettingsWindow(QWidget):
 
         self.update_settings_style()
 
-    def on_aot_toggled(self, checked):
-        if checked:
-            self.switch_sod.setChecked(False)
-            self.switch_minimize_idle.setEnabled(True)
-            self.spin_idle_minutes.setEnabled(True)
-            self.lbl_moi.setEnabled(True)
-            self.lbl_moi_desc.setEnabled(True)
-        else:
-            self.switch_minimize_idle.setChecked(False)
-            self.switch_minimize_idle.setEnabled(False)
-            self.spin_idle_minutes.setEnabled(False)
-            self.lbl_moi.setEnabled(False)
-            self.lbl_moi_desc.setEnabled(False)
-
-    def on_sod_toggled(self, checked):
-        if checked:
-            self.switch_aot.setChecked(False)
-            self.on_aot_toggled(False)
-
     def on_hide_streaming_toggled(self, checked):
         config.save_hide_while_streaming(checked)
         from utils.window_capture import set_window_capture_exclusion
@@ -1597,49 +1784,89 @@ class SettingsWindow(QWidget):
         from utils import config
         from utils.window_capture import set_window_capture_exclusion
         set_window_capture_exclusion(int(self.winId()), config.load_hide_while_streaming())
+        self._start_mic_meter()
+
+    def hideEvent(self, event):
+        self._stop_mic_meter()
+        super().hideEvent(event)
+
+    def check_for_updates_now(self):
+        """Asks the shared update service for a newer release and answers on this page."""
+        from utils.update_checker import UpdateService
+        service = UpdateService.get_instance()
+        if getattr(self, "_update_service", None) is not service:
+            service.checked.connect(self._on_update_checked)
+            service.unavailable.connect(self._on_update_unavailable)
+            service.download_changed.connect(self._on_download_changed)
+            self._update_service = service
+
+        pending = getattr(self, "_pending_update", None)
+        if pending is not None:
+            self.lbl_update_status.setText("Downloading the new setup…")
+            self.btn_check_updates.setEnabled(False)
+            service.download_and_install(pending)
+            return
+
+        self.lbl_update_status.setText("Checking GitHub…")
+        self.btn_check_updates.setEnabled(False)
+        service.check()
+
+    def _on_update_checked(self, info):
+        self.btn_check_updates.setEnabled(True)
+        self._pending_update = info
+        if info is None:
+            self.btn_check_updates.setText("Check now")
+            self.lbl_update_status.setText(f"You already have the newest build ({APP_VERSION}).")
+            return
+        self.btn_check_updates.setText("Update now")
+        self.lbl_update_status.setText(
+            f"Ticky {info.version} is available. The notch also offers to install it."
+        )
+
+    def _on_update_unavailable(self):
+        self.btn_check_updates.setEnabled(True)
+        self.lbl_update_status.setText("Couldn't reach GitHub. Try again later.")
+
+    def _on_download_changed(self, status):
+        if status == "ready":
+            self._pending_update = None
+            self.btn_check_updates.setText("Check now")
+            self.lbl_update_status.setText("Setup is running - follow it to finish the update.")
+        elif status == "failed":
+            self.btn_check_updates.setEnabled(True)
+            self.lbl_update_status.setText("Download failed. The release page is open instead.")
 
     def save_general_settings(self):
         aot = self.switch_aot.isChecked()
         tfh = self.switch_tfh.isChecked()
         dat = self.switch_dat.isChecked()
-        pin = self.switch_pin.isChecked()
-        sod = self.switch_sod.isChecked()
-        moi = self.switch_minimize_idle.isChecked()
-        moi_min = self.spin_idle_minutes.value()
         sos = self.switch_sos.isChecked()
         hws = self.switch_hide_streaming.isChecked()
-        
+        cfu = self.switch_update_notify.isChecked()
+
         config.save_always_on_top(aot)
         config.save_use_24h(tfh)
         config.save_show_date(dat)
-        config.save_pin_position(pin)
-        config.save_stick_on_desktop(sod)
-        config.save_minimize_on_idle(moi)
-        config.save_idle_minutes(moi_min)
         config.save_start_on_startup(sos)
         config.save_hide_while_streaming(hws)
-        
+        config.save_check_for_updates(cfu)
+
         # Sync with Windows registry run key
         from utils.startup import set_startup
         set_startup(sos)
         
         theme.USE_24H = tfh
         theme.SHOW_DATE = dat
-        theme.PIN_POSITION = pin
-        theme.STICK_ON_DESKTOP = sod
 
         from utils.window_capture import set_window_capture_exclusion
         set_window_capture_exclusion(int(self.winId()), hws)
         
         if self.parent_window:
-            if hasattr(self.parent_window, "set_stick_on_desktop"):
-                self.parent_window.set_stick_on_desktop(sod)
             self.parent_window.set_always_on_top(aot)
             if hasattr(self.parent_window, "apply_streaming_privacy"):
                 self.parent_window.apply_streaming_privacy(hws)
-            if hasattr(self.parent_window, "update_inactivity_timer_settings"):
-                self.parent_window.update_inactivity_timer_settings()
             self.parent_window.refresh_theme()
+
             
         self.btn_save_general.setText("Saved!")
         from PySide6.QtCore import QTimer
@@ -1708,13 +1935,67 @@ class SettingsWindow(QWidget):
     def on_accent_color_changed(self, color_hex):
         config.save_accent_color(color_hex)
         theme.ACCENT_COLOR = color_hex
-        
+
         for swatch in self.swatches:
             swatch.setSelected(swatch.color_hex.lower() == color_hex.lower())
-            
+
+        if hasattr(self, "hex_accent_input"):
+            self.hex_accent_input.blockSignals(True)
+            self.hex_accent_input.setText(color_hex.upper())
+            self.hex_accent_input.blockSignals(False)
+            self._update_custom_accent_preview(color_hex)
+
+        # The theme mocks draw their clock line and task dots in the accent
+        for card in getattr(self, "theme_cards", {}).values():
+            card.preview.update()
+
         self.update_settings_style()
         if self.parent_window:
             self.parent_window.refresh_theme()
+
+    def normalize_accent_hex(self, text):
+        """Return '#RRGGBB' for a valid hex string, otherwise None."""
+        value = (text or "").strip().lstrip("#")
+        if len(value) == 3:
+            value = "".join(ch * 2 for ch in value)
+        if len(value) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in value):
+            return None
+        return ("#" + value).upper()
+
+    def _update_custom_accent_preview(self, text):
+        hex_value = self.normalize_accent_hex(text)
+        preview = QColor(hex_value) if hex_value else QColor(theme.TEXT_SECONDARY)
+        self.btn_custom_accent.setStyleSheet(f"""
+            QPushButton#AccentCustomSwatch {{
+                background-color: {preview.name()};
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 13px;
+            }}
+            QPushButton#AccentCustomSwatch:hover {{
+                border: 1px solid {theme.ACCENT_COLOR};
+            }}
+        """)
+
+    def _set_hex_input_invalid(self, invalid):
+        self.hex_accent_input.setProperty("invalid", "true" if invalid else "false")
+        self.hex_accent_input.style().unpolish(self.hex_accent_input)
+        self.hex_accent_input.style().polish(self.hex_accent_input)
+
+    def pick_custom_accent(self):
+        """Open the native colour picker and apply whatever the user chooses."""
+        current = self.normalize_accent_hex(self.hex_accent_input.text()) or theme.ACCENT_COLOR
+        chosen = QColorDialog.getColor(QColor(current), self, "Choose an accent colour")
+        if chosen.isValid():
+            self._set_hex_input_invalid(False)
+            self.on_accent_color_changed(chosen.name().upper())
+
+    def apply_hex_accent(self):
+        hex_value = self.normalize_accent_hex(self.hex_accent_input.text())
+        if not hex_value:
+            self._set_hex_input_invalid(True)
+            return
+        self._set_hex_input_invalid(False)
+        self.on_accent_color_changed(hex_value)
 
     def on_task_font_size_changed(self, value):
         config.save_task_font_size(value)
@@ -1742,6 +2023,78 @@ class SettingsWindow(QWidget):
             self.parent_window.spotify_panel.update_playback()
         from PySide6.QtCore import QTimer
         QTimer.singleShot(1500, lambda: self.btn_save_spotify.setText("Save Mode / Credentials"))
+
+    def on_mic_changed(self):
+        config.save_mic_device_id(self.combo_mic.currentData() or "")
+        if self.isVisible():
+            self._start_mic_meter()
+
+    # -- live mic level meter ------------------------------------------
+    def _resolve_meter_device(self):
+        wanted = self.combo_mic.currentData() or ""
+        if wanted:
+            for d in self._media_devices.audioInputs():
+                if d.id() == wanted:
+                    return d
+        return self._media_devices.defaultAudioInput()
+
+    def _start_mic_meter(self):
+        self._stop_mic_meter()
+        device = self._resolve_meter_device()
+        if device is None or device.isNull():
+            return
+        try:
+            from PySide6.QtMultimedia import QAudioSource, QAudioFormat
+            from utils.dictation_service import DictationService
+            fmt = DictationService._build_wave_format(device)
+            if fmt.sampleFormat().value not in (
+                QAudioFormat.SampleFormat.Int16.value,
+                QAudioFormat.SampleFormat.Float.value,
+            ):
+                return
+            self._meter_fmt = fmt
+            self._meter_source = QAudioSource(device, fmt, self)
+            self._meter_io = self._meter_source.start()
+            if self._meter_io is None:
+                self._meter_source.deleteLater()
+                self._meter_source = None
+                return
+            self._meter_timer.start()
+        except Exception:
+            pass
+
+    def _stop_mic_meter(self):
+        self._meter_timer.stop()
+        if self._meter_source is not None:
+            try:
+                self._meter_source.stop()
+            except Exception:
+                pass
+            self._meter_source.deleteLater()
+            self._meter_source = None
+        self._meter_io = None
+        self._meter_level = 0.0
+        if hasattr(self, "mic_level_bar"):
+            self.mic_level_bar.set_level(0.0)
+
+    def _tick_mic_meter(self):
+        io = self._meter_io
+        fmt = self._meter_fmt
+        if io is None or fmt is None:
+            return
+        data = bytes(io.readAll())
+        if not data:
+            return
+        from PySide6.QtMultimedia import QAudioFormat
+        from utils.dictation_service import DictationService
+        if fmt.sampleFormat().value != QAudioFormat.SampleFormat.Int16.value:
+            converted = DictationService._to_int16(data, fmt)
+            if converted is None:
+                return
+            data = converted
+        level = DictationService._level_from_pcm16(data)
+        self._meter_level += (level - self._meter_level) * 0.45
+        self.mic_level_bar.set_level(self._meter_level)
 
     def save_ai_key(self):
         provider = self.combo_provider.currentText()
@@ -1797,10 +2150,14 @@ class SettingsWindow(QWidget):
     def save_shortcut_settings(self):
         t_sc = self.input_toggle_shortcut.text().strip()
         n_sc = self.input_new_task_shortcut.text().strip()
+        d_sc = self.input_voice_dictation_shortcut.text().strip()
+        s_sc = self.input_app_search_shortcut.text().strip()
         
         config.save_shortcuts({
             "toggle_window": t_sc if t_sc and t_sc != "None" else "",
-            "new_task": n_sc if n_sc and n_sc != "None" else ""
+            "new_task": n_sc if n_sc and n_sc != "None" else "",
+            "voice_dictation": d_sc if d_sc and d_sc != "None" else "",
+            "app_search": s_sc if s_sc and s_sc != "None" else "",
         })
         
         if self.parent_window and hasattr(self.parent_window, 'register_global_hotkeys'):
@@ -1872,16 +2229,9 @@ class SettingsWindow(QWidget):
             }
             self.input_ai_model.setText(defaults.get(provider_name, "gemini-1.5-flash"))
 
-    def on_demo_mode_toggled(self, checked):
-        config.save_spotify_demo_mode(checked)
-        self.update_spotify_status_ui()
-        if self.parent_window and hasattr(self.parent_window, 'spotify_panel'):
-            self.parent_window.spotify_panel.update_playback()
-
     def update_spotify_status_ui(self):
         c_id, c_secret = config.load_spotify_credentials()
         access, refresh = config.load_spotify_tokens()
-        demo = config.load_spotify_demo_mode()
         backend_mode = config.load_spotify_backend_mode("gsmtc")
         
         has_creds = bool(c_id.strip() and c_secret.strip())
@@ -1892,13 +2242,9 @@ class SettingsWindow(QWidget):
             self.btn_connect_spotify.hide()
             self.btn_save_spotify.setText("Save Mode")
             
-            if demo:
-                self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
-                self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
-            else:
-                self.lbl_spot_status.setText("● Automatic Integration Active (Windows Media)")
-                self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
-                self.lbl_spotify_guide.setText(
+            self.lbl_spot_status.setText("● Automatic Integration Active (Windows Media)")
+            self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
+            self.lbl_spotify_guide.setText(
                     "<b>Automatic (Windows Media):</b><br>"
                     "Ticky uses native Windows Global System Media Transport Controls (GSMTC) to automatically detect and control <b>Spotify Desktop</b> and <b>Spotify Web Player</b>.<br>"
                     "No Client ID, Secret, or OAuth setup required."
@@ -1910,10 +2256,7 @@ class SettingsWindow(QWidget):
             self.btn_connect_spotify.setEnabled(has_creds)
             self.btn_save_spotify.setText("Save Credentials")
             
-            if demo:
-                self.lbl_spot_status.setText("Status: Running in Demo / Simulation Mode")
-                self.lbl_spot_status.setStyleSheet("color: #FF9F0A; font-weight: bold;")
-            elif access and refresh:
+            if access and refresh:
                 self.lbl_spot_status.setText("Status: Linked & Connected via Web API")
                 self.lbl_spot_status.setStyleSheet("color: #30D158; font-weight: bold;")
             elif c_id and c_secret:
@@ -1962,9 +2305,17 @@ class SettingsWindow(QWidget):
             self.lbl_spot_status.setStyleSheet("color: #FF453A;")
 
     def exit_application(self):
-        if self.parent_window:
-            self.parent_window.close()
+        from PySide6.QtWidgets import QApplication
+        # Fully terminate Ticky (tray keeps the app alive otherwise)
+        if self.parent_window and hasattr(self.parent_window, 'unregister_global_hotkeys'):
+            try:
+                self.parent_window.unregister_global_hotkeys()
+            except Exception:
+                pass
         self.close()
+        app = QApplication.instance()
+        if app:
+            app.quit()
         
     def show_centered(self):
         from PySide6.QtWidgets import QApplication
@@ -2006,12 +2357,22 @@ class SettingsWindow(QWidget):
         # Refresh settings window styling itself
         self.update_settings_style()
 
-        # Refresh the main widget and all its panels
+        # Refresh the main widget, notch widget, and all panels
         if self.parent_window:
             self.parent_window.refresh_theme()
+            if hasattr(self.parent_window, "notch_widget") and self.parent_window.notch_widget:
+                self.parent_window.notch_widget.apply_notch_style()
+        else:
+            from PySide6.QtWidgets import QApplication
+            for widget in QApplication.topLevelWidgets():
+                if hasattr(widget, "refresh_theme"):
+                    widget.refresh_theme()
+                if hasattr(widget, "apply_notch_style"):
+                    widget.apply_notch_style()
 
     def closeEvent(self, event):
         self.opened_from_ai = False
+        self._stop_mic_meter()
         if self.parent_window and hasattr(self.parent_window, 'register_global_hotkeys'):
             self.parent_window.register_global_hotkeys()
         if self.parent_window and hasattr(self.parent_window, 'toolbar'):

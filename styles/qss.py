@@ -32,27 +32,6 @@ def get_clock_style():
             border: none;
             letter-spacing: 0.5px;
         }}
-        /* --- Split style labels --- */
-        QLabel#SplitDigitLabel {{
-            color: {theme.TEXT_PRIMARY};
-            font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 22px;
-            font-weight: {theme.CLOCK_WEIGHT};
-            background-color: transparent;
-            border: none;
-            margin: 0px;
-            padding: 0px;
-            line-height: 1;
-        }}
-        QLabel#SplitDayLabel {{
-            color: {theme.ACCENT_COLOR};
-            font-family: {theme.FONT_FAMILY};
-            font-size: 13px;
-            font-weight: 700;
-            background-color: transparent;
-            border: none;
-            letter-spacing: 1px;
-        }}
         /* --- Casio / LED style labels --- */
         QLabel#CasioTimeLabel {{
             color: {theme.ACCENT_COLOR};
@@ -243,8 +222,41 @@ def get_settings_style():
             letter-spacing: 1.5px;
             background-color: transparent;
             padding-left: 12px;
-            padding-top: 18px;
+            padding-top: 4px;
             padding-bottom: 10px;
+        }}
+        QLineEdit#SidebarSearch {{
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            color: {theme.TEXT_PRIMARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            padding: 4px 8px;
+        }}
+        QLineEdit#SidebarSearch:focus {{
+            border: 1px solid {theme.ACCENT_COLOR};
+            background-color: rgba(255, 255, 255, 0.08);
+        }}
+        QListWidget#SidebarSearchResults {{
+            background-color: transparent;
+            border: none;
+            outline: none;
+        }}
+        QListWidget#SidebarSearchResults::item {{
+            color: {theme.TEXT_SECONDARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            padding: 7px 10px;
+            border-radius: 6px;
+        }}
+        QListWidget#SidebarSearchResults::item:hover {{
+            background-color: {theme.HOVER_COLOR};
+            color: {theme.TEXT_PRIMARY};
+        }}
+        QListWidget#SidebarSearchResults::item:selected {{
+            background-color: {rgba_accent_bg};
+            color: {theme.ACCENT_COLOR};
         }}
         QPushButton#SidebarButton {{
             background-color: transparent;
@@ -256,7 +268,7 @@ def get_settings_style():
             font-weight: 600;
             padding: 8px 12px;
             text-align: left;
-            margin: 0px 4px;
+            margin: 0px;
         }}
         QPushButton#SidebarButton:hover {{
             background-color: {theme.HOVER_COLOR};
@@ -271,6 +283,11 @@ def get_settings_style():
             font-weight: 700;
             padding-left: 9px;
         }}
+        QFrame#PageTitlePill {{
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+        }}
         QLabel#SettingsTitle {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
@@ -279,17 +296,16 @@ def get_settings_style():
             background-color: transparent;
         }}
         QPushButton#SettingsCloseButton {{
-            background-color: transparent;
+            background-color: rgba(255, 255, 255, 0.04);
             color: {theme.TEXT_SECONDARY};
-            border: none;
-            font-size: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            font-size: 20px;
             font-weight: bold;
-            min-width: 24px;
-            min-height: 24px;
-            max-width: 24px;
-            max-height: 24px;
         }}
         QPushButton#SettingsCloseButton:hover {{
+            background-color: rgba(255, 80, 80, 0.15);
+            border: 1px solid rgba(255, 80, 80, 0.4);
             color: {theme.TEXT_PRIMARY};
         }}
         QLabel#SettingLabel {{
@@ -548,40 +564,36 @@ def get_clock_preview_card_style(weight=None):
     rgba_accent = f"rgba({ar}, {ag}, {ab}, 0.12)"
     preview_weight = weight or theme.CLOCK_WEIGHT
     return f"""
-        QFrame#ClockStyleCard {{
+        QWidget#ClockStyleCard {{
+            background: transparent;
+            border: none;
+        }}
+        QFrame#ClockStylePreview {{
             background-color: {theme.MAIN_CARD_COLOR};
             border: 1px solid {theme.BORDER_COLOR};
             border-radius: 8px;
         }}
-        QFrame#ClockStyleCard:hover {{
+        QFrame#ClockStylePreview:hover,
+        QWidget#ClockStyleCard:hover QFrame#ClockStylePreview {{
             background-color: {theme.HOVER_COLOR};
             border: 1px solid rgba(255, 255, 255, 0.08);
         }}
-        QFrame#ClockStyleCard[active="true"] {{
+        QFrame#ClockStylePreview[active="true"] {{
             background-color: {rgba_accent};
             border: 1px solid {theme.ACCENT_COLOR};
         }}
         QLabel#CardPreviewTime {{
             color: {theme.TEXT_PRIMARY};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 13px;
+            font-size: 15px;
             font-weight: {preview_weight};
             background: transparent;
             border: none;
-        }}
-        QLabel#CardPreviewTimeSplit {{
-            color: {theme.TEXT_PRIMARY};
-            font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 11px;
-            font-weight: {preview_weight};
-            background: transparent;
-            border: none;
-            line-height: 1;
         }}
         QLabel#CardPreviewTimeCasio {{
             color: {theme.ACCENT_COLOR};
             font-family: "DSEG7 Classic";
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 400;
             background: transparent;
             border: none;
@@ -589,7 +601,7 @@ def get_clock_preview_card_style(weight=None):
         QLabel#CardPreviewTimeNeon {{
             color: {theme.ACCENT_COLOR};
             font-family: {theme.HEADER_FONT_FAMILY};
-            font-size: 13px;
+            font-size: 15px;
             font-weight: {preview_weight};
             background: transparent;
             border: none;
@@ -597,7 +609,7 @@ def get_clock_preview_card_style(weight=None):
         QLabel#CardPreviewDate {{
             color: {theme.TEXT_SECONDARY};
             font-family: {theme.FONT_FAMILY};
-            font-size: 6px;
+            font-size: 7px;
             font-weight: 600;
             letter-spacing: 0.3px;
             background: transparent;
@@ -606,16 +618,228 @@ def get_clock_preview_card_style(weight=None):
         QLabel#CardStyleName {{
             color: {theme.TEXT_SECONDARY};
             font-family: {theme.FONT_FAMILY};
-            font-size: 8px;
+            font-size: 10px;
             font-weight: 600;
             letter-spacing: 0.3px;
             background: transparent;
             border: none;
         }}
-        QFrame#ClockStyleCard[active="true"] QLabel#CardStyleName {{
+        QWidget#ClockStyleCard:hover QLabel#CardStyleName {{
+            color: {theme.TEXT_PRIMARY};
+        }}
+        QWidget#ClockStyleCard[active="true"] QLabel#CardStyleName {{
             color: {theme.ACCENT_COLOR};
         }}
     """
+
+
+def get_appearance_style():
+    """Styles for the Appearance page: theme preview cards and the custom accent controls."""
+    return f"""
+        QWidget#ThemeStyleCard {{
+            background: transparent;
+            border: none;
+        }}
+        QPushButton#ThemeStylePreview {{
+            background: transparent;
+            border: none;
+        }}
+        QLabel#ThemeStyleName {{
+            color: {theme.TEXT_SECONDARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#ThemeStyleName[active="true"] {{
+            color: {theme.ACCENT_COLOR};
+            font-weight: 700;
+        }}
+        QLineEdit#AccentHexInput {{
+            background-color: {theme.SEC_CARD_COLOR};
+            color: {theme.TEXT_PRIMARY};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 6px;
+            font-family: {theme.FONT_FAMILY};
+            font-size: 11px;
+            padding: 2px 8px;
+        }}
+        QLineEdit#AccentHexInput:focus {{
+            border: 1px solid {theme.ACCENT_COLOR};
+        }}
+        QLineEdit#AccentHexInput[invalid="true"] {{
+            border: 1px solid #FF453A;
+        }}
+        QPushButton#AccentHexApply {{
+            background-color: {theme.SEC_CARD_COLOR};
+            color: {theme.TEXT_PRIMARY};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 6px;
+            font-family: {theme.FONT_FAMILY};
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 12px;
+        }}
+        QPushButton#AccentHexApply:hover {{
+            background-color: {theme.HOVER_COLOR};
+            border: 1px solid {theme.ACCENT_COLOR};
+        }}
+    """
+
+
+def get_onboarding_style():
+    """Styles for the first-run onboarding wizard (all four pages)."""
+    return f"""
+        QWidget#OnbRoot {{
+            background: transparent;
+        }}
+        QFrame#OnbContainer {{
+            background-color: {theme.BG_COLOR};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 18px;
+        }}
+        QLabel#OnbWordmark {{
+            color: {theme.TEXT_PRIMARY};
+            font-family: {theme.HEADER_FONT_FAMILY};
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 2.4px;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbTitle {{
+            color: {theme.TEXT_PRIMARY};
+            font-family: {theme.HEADER_FONT_FAMILY};
+            font-size: 34px;
+            font-weight: 700;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbSubtitle {{
+            color: {theme.ACCENT_COLOR};
+            font-family: {theme.HEADER_FONT_FAMILY};
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 3.2px;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbHeading {{
+            color: {theme.TEXT_PRIMARY};
+            font-family: {theme.HEADER_FONT_FAMILY};
+            font-size: 21px;
+            font-weight: 700;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbBody, QLabel#OnbFeature {{
+            color: {theme.TEXT_SECONDARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbFeature {{
+            color: {theme.TEXT_PRIMARY};
+            font-size: 12px;
+        }}
+        QFrame#OnbSection {{
+            background-color: {theme.MAIN_CARD_COLOR};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 12px;
+        }}
+        QLabel#OnbSectionTitle {{
+            color: {theme.TEXT_PRIMARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            font-weight: 700;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbSectionDesc {{
+            color: {theme.TEXT_SECONDARY};
+            font-family: {theme.FONT_FAMILY};
+            font-size: 10px;
+            background: transparent;
+            border: none;
+        }}
+        QLabel#OnbHero {{
+            background: transparent;
+            border: none;
+        }}
+        QPushButton#OnbPrimary {{
+            background-color: {theme.ACCENT_COLOR};
+            color: #06080B;
+            border: none;
+            border-radius: 9px;
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            font-weight: 700;
+            padding: 9px 20px;
+        }}
+        QPushButton#OnbPrimary:hover {{
+            background-color: {theme.ACCENT_COLOR};
+            border: 1px solid rgba(255, 255, 255, 0.55);
+        }}
+        QPushButton#OnbPrimary:disabled {{
+            background-color: {theme.SEC_CARD_COLOR};
+            color: {theme.TEXT_SECONDARY};
+            border: 1px solid {theme.BORDER_COLOR};
+        }}
+        QPushButton#OnbGhost {{
+            background-color: {theme.MAIN_CARD_COLOR};
+            color: {theme.TEXT_PRIMARY};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 9px;
+            font-family: {theme.FONT_FAMILY};
+            font-size: 12px;
+            font-weight: 600;
+            padding: 9px 18px;
+        }}
+        QPushButton#OnbGhost:hover {{
+            background-color: {theme.HOVER_COLOR};
+            border: 1px solid {theme.ACCENT_COLOR};
+        }}
+        QPushButton#OnbClose {{
+            background-color: transparent;
+            color: {theme.TEXT_SECONDARY};
+            border: none;
+            border-radius: 11px;
+            font-size: 17px;
+            font-weight: 500;
+        }}
+        QPushButton#OnbClose:hover {{
+            background-color: {theme.HOVER_COLOR};
+            color: {theme.TEXT_PRIMARY};
+        }}
+        QLineEdit#OnbInput, QComboBox#OnbInput {{
+            background-color: {theme.SEC_CARD_COLOR};
+            color: {theme.TEXT_PRIMARY};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 8px;
+            font-family: {theme.FONT_FAMILY};
+            font-size: 11px;
+            padding: 7px 10px;
+        }}
+        QLineEdit#OnbInput:focus, QComboBox#OnbInput:focus {{
+            border: 1px solid {theme.ACCENT_COLOR};
+        }}
+        QComboBox#OnbInput::drop-down {{
+            border: none;
+            width: 22px;
+        }}
+        QComboBox#OnbInput QAbstractItemView {{
+            background-color: {theme.MAIN_CARD_COLOR};
+            color: {theme.TEXT_PRIMARY};
+            border: 1px solid {theme.BORDER_COLOR};
+            border-radius: 8px;
+            selection-background-color: {theme.HOVER_COLOR};
+            outline: none;
+        }}
+    """
+
 
 
 

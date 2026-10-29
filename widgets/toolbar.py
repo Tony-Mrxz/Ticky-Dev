@@ -5,11 +5,11 @@ from PySide6.QtSvg import QSvgRenderer
 from styles import theme, qss
 
 # Raw SVG Templates with COLOR_PLACEHOLDER for dynamic dye colors
-TIMER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M5 2H4v2h1v1c0 2.46 1.32 4.77 3.43 6.02.35.21.57.55.57.9v.16c0 .35-.21.69-.57.9A7.01 7.01 0 0 0 5 19v1H4v2h16v-2h-1v-1c0-2.46-1.32-4.77-3.43-6.02-.36-.21-.57-.55-.57-.9v-.16c0-.35.21-.69.57-.9A7.01 7.01 0 0 0 19 5V4h1V2zm12 3c0 1.76-.94 3.41-2.45 4.3-.97.57-1.55 1.55-1.55 2.62v.16c0 1.07.58 2.05 1.55 2.62 1.51.89 2.45 2.54 2.45 4.3v1H7v-1c0-1.76.94-3.41 2.45-4.3.97-.57 1.55-1.55 1.55-2.62v-.16c0-1.07-.58-2.05-1.55-2.62A5.01 5.01 0 0 1 7 5V4h10z"></path></svg>"""
+TIMER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M11 2v2.06c-4.49.5-8 4.32-8 8.94 0 4.96 4.04 9 9 9s9-4.04 9-9c0-2.12-.74-4.07-1.98-5.61l1.46-1.46-1.41-1.41-1.46 1.46A9 9 0 0 0 13 4.06V2zm8 11c0 3.86-3.14 7-7 7s-7-3.14-7-7 3.14-7 7-7 7 3.14 7 7"></path><path d="M11 8h2v6h-2z"></path></svg>"""
 
 POMODORO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M19.07 4.93a9.9 9.9 0 0 0-3.18-2.14A9.95 9.95 0 0 0 12 2c-.55 0-1 .45-1 1v5h2V4.06c.73.09 1.44.28 2.11.57.95.4 1.81.98 2.54 1.72.74.73 1.31 1.59 1.71 2.54.42.99.63 2.03.63 3.11s-.21 2.13-.63 3.11c-.4.95-.98 1.81-1.72 2.54-.73.74-1.59 1.31-2.54 1.71-1.97.83-4.26.83-6.23 0-.95-.4-1.81-.98-2.54-1.72a7.8 7.8 0 0 1-1.71-2.54c-.42-.99-.63-2.03-.63-3.11s.21-2.13.63-3.11c.4-.95.98-1.81 1.72-2.54L4.93 4.92c-.92.92-1.64 1.99-2.14 3.18C2.27 9.33 2 10.64 2 11.99s.26 2.66.79 3.89c.5 1.19 1.23 2.26 2.14 3.18s1.99 1.64 3.18 2.14c1.23.52 2.54.79 3.89.79s2.66-.26 3.89-.79c1.19-.5 2.26-1.23 3.18-2.14s1.64-1.99 2.14-3.18c.52-1.23.79-2.54.79-3.89s-.26-2.66-.79-3.89c-.5-1.19-1.23-2.26-2.14-3.18Z"></path><path d="M12.88 11.12 8 8l3.12 4.88c1.22 1.68 3.45-.55 1.77-1.77Z"></path></svg>"""
 
-SPOTIFY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M17.68 5.47H22V8h-4.32zm0 3.51H22v2.53h-4.32zm0 3.51H22v2.53h-4.32zM2 16h4.32v2.53H2zm5.22 0h4.32v2.53H7.22zm5.23 0h4.32v2.53h-4.32zm5.23 0H22v2.53h-4.32zm-5.23-3.51h4.32v2.53h-4.32zm-5.23 0h4.32v2.53H7.22zm0-3.51h4.32v2.53H7.22z"></path></svg>"""
+SPOTIFY_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M11 8h2v8h-2zm8 2h2v4h-2zm-4-5h2v14h-2zM7 3h2v18H7zM3 9h2v6H3z"></path></svg>"""
 
 SETTINGS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4m0 6c-1.08 0-2-.92-2-2s.92-2 2-2 2 .92 2 2-.92 2-2 2"></path><path d="m20.42 13.4-.51-.29c.05-.37.08-.74.08-1.11s-.03-.74-.08-1.11l.51-.29c.96-.55 1.28-1.78.73-2.73l-1-1.73a2.006 2.006 0 0 0-2.73-.73l-.53.31c-.58-.46-1.22-.83-1.9-1.11v-.6c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v.6c-.67.28-1.31.66-1.9 1.11l-.53-.31c-.96-.55-2.18-.22-2.73.73l-1 1.73c-.55.96-.22 2.18.73 2.73l.51.29c-.05.37-.08.74-.08 1.11s.03.74.08 1.11l-.51.29c-.96.55-1.28 1.78-.73 2.73l1 1.73c.55.95 1.77 1.28 2.73.73l.53-.31c.58.46 1.22.83 1.9 1.11v.6c0 1.1.9 2 2 2h2c1.1 0 2-.9 2-2v-.6a8.7 8.7 0 0 0 1.9-1.11l.53.31c.95.55 2.18.22 2.73-.73l1-1.73c.55-.96.22-2.18-.73-2.73m-2.59-2.78c.11.45.17.92.17 1.38s-.06.92-.17 1.38a1 1 0 0 0 .47 1.11l1.12.65-1 1.73-1.14-.66c-.38-.22-.87-.16-1.19.14-.68.65-1.51 1.13-2.38 1.4-.42.13-.71.52-.71.96v1.3h-2v-1.3c0-.44-.29-.83-.71-.96-.88-.27-1.7-.75-2.38-1.4a1.01 1.01 0 0 0-1.19-.15l-1.14.66-1-1.73 1.12-.65c.39-.22.58-.68.47-1.11-.11-.45-.17-.92-.17-1.38s.06-.93.17-1.38A1 1 0 0 0 5.7 9.5l-1.12-.65 1-1.73 1.14.66c.38.22.87.16 1.19-.14.68-.65 1.51-1.13 2.38-1.4.42-.13.71-.52.71-.96v-1.3h2v1.3c0 .44.29.83.71.96.88.27 1.7.75 2.38 1.4.32.31.81.36 1.19.14l1.14-.66 1 1.73-1.12.65c-.39.22-.58.68-.47 1.11Z"></path></svg>"""
 
@@ -265,8 +265,9 @@ class FloatingToolbar(QWidget):
     ai_clicked = Signal()
     settings_clicked = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, solid_background: bool = False):
         super().__init__(parent)
+        self.solid_background = solid_background
         self.setObjectName("ToolbarCapsule")
         self.is_stopwatch_active = False
         self.is_timer_running = False
@@ -557,17 +558,26 @@ class FloatingToolbar(QWidget):
             self.pomodoro_ms = 25 * 60 * 1000
 
     def paintEvent(self, event):
-        # We draw the static glassy rounded rect
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = self.rect().adjusted(1, 1, -1, -1)
         
-        # Static 60% opacity background (152 alpha) and 10% opacity border (24 alpha)
-        bg_color = QColor(theme.SEC_CARD_COLOR)
-        bg_color.setAlpha(152) 
-        
-        border_color = QColor(255, 255, 255, 24) 
+        theme_border = QColor(theme.BORDER_COLOR)
+        if not theme_border.isValid():
+            theme_border = QColor(255, 255, 255, 24)
+        elif theme_border.alpha() < 30:
+            theme_border.setAlpha(36)
+
+        if getattr(self, "solid_background", False):
+            # Pure solid opaque background matching the notch (zero transparency)
+            bg_color = QColor(theme.BG_COLOR)
+            border_color = theme_border
+        else:
+            # Static 60% opacity background (152 alpha) and themed border
+            bg_color = QColor(theme.SEC_CARD_COLOR)
+            bg_color.setAlpha(152) 
+            border_color = theme_border
         
         painter.setBrush(bg_color)
         painter.setPen(QPen(border_color, 1))

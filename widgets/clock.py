@@ -2,21 +2,20 @@
 """Multi-style Clock and Date header widget."""
 
 from PySide6.QtCore import Qt, QTimer, QDateTime
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
 
 
 class ClockWidget(QWidget):
     """
-    Style-switchable clock widget supporting 5 display modes:
+    Style-switchable clock widget supporting 4 display modes:
       classic  — HH:MM / full date below (default)
-      split    — Hours and minutes stacked vertically, Day + Date beside
       casio    — Real 7-segment DSEG7 LED digital font with inner border box
       minimal  — Time only, no date
       neon     — Time in accent color with date below
     """
 
-    STYLES = ["classic", "split", "casio", "minimal", "neon"]
+    STYLES = ["classic", "casio", "minimal", "neon"]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -70,9 +69,7 @@ class ClockWidget(QWidget):
 
         pad = (10, 8, 10, 8) if show_box else (0, 0, 0, 0)
 
-        if style == "split":
-            self._build_split(pad)
-        elif style == "casio":
+        if style == "casio":
             self._build_casio(pad)
         elif style == "minimal":
             self._build_minimal(pad)
@@ -90,30 +87,6 @@ class ClockWidget(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._make_label("time", "ClockLabel"))
         layout.addWidget(self._make_label("date", "DateLabel"))
-
-    def _build_split(self, pad):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(*pad)
-        layout.setSpacing(10)
-        layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        # Left column: stacked hours / minutes
-        left = QVBoxLayout()
-        left.setSpacing(-8)
-        left.setContentsMargins(0, 0, 0, 0)
-        left.addWidget(self._make_label("hours", "SplitDigitLabel"))
-        left.addWidget(self._make_label("mins",  "SplitDigitLabel"))
-
-        # Right column: Day / Month+Date
-        right = QVBoxLayout()
-        right.setSpacing(3)
-        right.setContentsMargins(0, 0, 0, 0)
-        right.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        right.addWidget(self._make_label("day",  "SplitDayLabel"))
-        right.addWidget(self._make_label("date", "DateLabel"))
-
-        layout.addLayout(left)
-        layout.addLayout(right)
 
     def _build_casio(self, pad):
         # Casio uses a fixed inner-border box, always has box feel
@@ -216,15 +189,6 @@ class ClockWidget(QWidget):
         else:
             time_str = now.toString("HH:mm" if use_24h else "hh:mm AP")
 
-        hour_val = now.time().hour()
-        if not use_24h:
-            hour_12 = hour_val % 12
-            if hour_12 == 0:
-                hour_12 = 12
-            hours_str = f"{hour_12:02d}"
-        else:
-            hours_str = f"{hour_val:02d}"
-        mins_str  = now.toString("mm")
         day_str   = now.toString("ddd").upper()
         date_str  = now.toString("MMM d").upper()
         full_date = now.toString("dddd, MMMM d").upper()
@@ -233,13 +197,7 @@ class ClockWidget(QWidget):
         lbl = self._labels
 
         try:
-            if sty == "split":
-                if "hours" in lbl: lbl["hours"].setText(hours_str)
-                if "mins"  in lbl: lbl["mins"].setText(mins_str)
-                if "day"   in lbl: lbl["day"].setText(day_str)
-                if "date"  in lbl: lbl["date"].setText(date_str)
-
-            elif sty == "casio":
+            if sty == "casio":
                 if "time" in lbl: lbl["time"].setText(time_str)
                 if "date" in lbl: lbl["date"].setText(f"{day_str}  {date_str}")
 
