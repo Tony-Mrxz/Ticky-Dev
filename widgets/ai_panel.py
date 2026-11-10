@@ -80,12 +80,13 @@ REMINDER: Always format your entire output as a valid JSON object.
 class AIWorker(QThread):
     finished = Signal(bool, str)
     
-    def __init__(self, provider, model, api_key, prompt):
+    def __init__(self, provider, model, api_key, prompt, base_url=""):
         super().__init__()
         self.provider = provider
         self.model = model
         self.api_key = api_key
         self.prompt = prompt
+        self.base_url = base_url
         
     def run(self):
         import requests
@@ -105,6 +106,12 @@ class AIWorker(QThread):
                 model = "openai/gpt-oss-120b"
             elif provider == "openrouter":
                 model = "meta-llama/llama-3-8b-instruct:free"
+            elif provider == "ollama":
+                model = "llama3.2"
+            elif provider in ("lm studio", "custom (openai-compatible)"):
+                # Local servers require the exact loaded model id; none is guessed.
+                self.finished.emit(False, "No model set. Enter the model name in Settings -> AI Config (use Fetch Models to list what the server has loaded).")
+                return
             else:
                 model = "gemini-1.5-flash"
 
@@ -220,10 +227,60 @@ class AIWorker(QThread):
                     err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
                     self.finished.emit(False, err_msg)
                     
+            elif config.is_local_ai_provider(self.provider):
+                base_url = (self.base_url or config.load_local_llm_url(self.provider)).rstrip("/")
+                url = f"{base_url}/v1/chat/completions"
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_content},
+                        {"role": "user", "content": self.prompt}
+                    ]
+                }
+                # Local inference on consumer hardware can be much slower than cloud APIs.
+                response = requests.post(url, headers=headers, json=payload, timeout=180)
+                if response.status_code == 200:
+                    data = response.json()
+                    text = data["choices"][0]["message"]["content"]
+                    self.finished.emit(True, text.strip())
+                else:
+                    try:
+                        err_msg = response.json().get("error", {}).get("message", f"HTTP {response.status_code}")
+                    except Exception:
+                        err_msg = f"HTTP {response.status_code}"
+                    self.finished.emit(False, err_msg)
+
             else:
                 self.finished.emit(False, f"Unsupported provider: {self.provider}")
+        except requests.exceptions.ConnectionError:
+            if config.is_local_ai_provider(self.provider):
+                base_url = (self.base_url or config.load_local_llm_url(self.provider)).rstrip("/")
+                self.finished.emit(False, f"Cannot reach {self.provider} at {base_url}. Make sure the server is running and the URL in Settings -> AI Config is correct.")
+            else:
+                self.finished.emit(False, "Connection failed. Check your internet connection and try again.")
         except Exception as e:
             self.finished.emit(False, str(e))
+
+
+def fetch_local_models(provider, base_url=""):
+    """List model ids from a local OpenAI-compatible server. Returns (models, error)."""
+    import requests
+    base_url = (base_url or config.load_local_llm_url(provider)).rstrip("/")
+    try:
+        response = requests.get(f"{base_url}/v1/models", timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        models = [m["id"] for m in data.get("data", []) if isinstance(m, dict) and m.get("id")]
+        if not models:
+            return [], "The server responded but reports no models loaded."
+        return models, ""
+    except requests.exceptions.ConnectionError:
+        return [], f"Cannot reach the server at {base_url}. Is it running?"
+    except Exception as e:
+        return [], f"Could not list models: {e}"
 
 
 class ChatBubble(QFrame):
@@ -603,25 +660,26 @@ class AIPanel(QWidget):
         model = config.load_ai_model()
         api_key = config.load_ai_api_key()
         
-        if not api_key:
-            self.add_bubble(f"⚠️ API Key not set! Please save your key in Ticky Settings -> AI Chat tab.", is_user=False)
-            return
-            
-        if api_key.startswith("gsk_") and provider.lower() != "groq":
-            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'gsk_', which is a Groq key, but the selected provider is '{provider}'. Please change the AI Provider to 'Groq' in Settings -> AI Chat.", is_user=False)
-            return
-        elif api_key.startswith("sk-or-v1-") and provider.lower() != "openrouter":
-            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-or-v1-', which is an OpenRouter key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenRouter' in Settings -> AI Chat.", is_user=False)
-            return
-        elif api_key.startswith("sk-ant-") and provider.lower() != "claude":
-            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-ant-', which is a Claude key, but the selected provider is '{provider}'. Please change the AI Provider to 'Claude' in Settings -> AI Chat.", is_user=False)
-            return
-        elif (api_key.startswith("sk-proj-") or (api_key.startswith("sk-") and not api_key.startswith("sk-or-v1-") and not api_key.startswith("sk-ant-"))) and provider.lower() != "openai":
-            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-', which is an OpenAI key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenAI' in Settings -> AI Chat.", is_user=False)
-            return
-        elif api_key.startswith("AIzaSy") and provider.lower() != "gemini":
-            self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'AIzaSy', which is a Gemini key, but the selected provider is '{provider}'. Please change the AI Provider to 'Gemini' in Settings -> AI Chat.", is_user=False)
-            return
+        if not config.is_local_ai_provider(provider):
+            if not api_key:
+                self.add_bubble(f"⚠️ API Key not set! Please save your key in Ticky Settings -> AI Chat tab.", is_user=False)
+                return
+
+            if api_key.startswith("gsk_") and provider.lower() != "groq":
+                self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'gsk_', which is a Groq key, but the selected provider is '{provider}'. Please change the AI Provider to 'Groq' in Settings -> AI Chat.", is_user=False)
+                return
+            elif api_key.startswith("sk-or-v1-") and provider.lower() != "openrouter":
+                self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-or-v1-', which is an OpenRouter key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenRouter' in Settings -> AI Chat.", is_user=False)
+                return
+            elif api_key.startswith("sk-ant-") and provider.lower() != "claude":
+                self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-ant-', which is a Claude key, but the selected provider is '{provider}'. Please change the AI Provider to 'Claude' in Settings -> AI Chat.", is_user=False)
+                return
+            elif (api_key.startswith("sk-proj-") or (api_key.startswith("sk-") and not api_key.startswith("sk-or-v1-") and not api_key.startswith("sk-ant-"))) and provider.lower() != "openai":
+                self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'sk-', which is an OpenAI key, but the selected provider is '{provider}'. Please change the AI Provider to 'OpenAI' in Settings -> AI Chat.", is_user=False)
+                return
+            elif api_key.startswith("AIzaSy") and provider.lower() != "gemini":
+                self.add_bubble(f"⚠️ API Key Mismatch!\nYour API key starts with 'AIzaSy', which is a Gemini key, but the selected provider is '{provider}'. Please change the AI Provider to 'Gemini' in Settings -> AI Chat.", is_user=False)
+                return
             
         # Add thinking indicator
         self.thinking_bubble = ChatBubble("AI is thinking...", is_user=False, parent=self)

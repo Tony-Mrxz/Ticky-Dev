@@ -26,6 +26,22 @@ from widgets.notch_sub_pill import NotchSubPill
 from widgets.notch_ai_chat import NotchMiniAIChat
 from widgets.notch_reminder import NotchReminderWidget
 from widgets.notch_app_search import NotchAppSearchWidget
+from widgets.notch_weather import (
+    NotchWeatherWidget,
+    WEATHER_NOTCH_WIDTH,
+    WEATHER_NOTCH_HEIGHT,
+)
+from widgets.notch_hardware import (
+    NotchHardwareWidget,
+    HARDWARE_NOTCH_WIDTH,
+    HARDWARE_NOTCH_HEIGHT,
+    HARDWARE_NOTCH_COMPACT_HEIGHT,
+)
+from widgets.notch_calendar import (
+    NotchCalendarWidget,
+    NOTCH_WIDTH as CALENDAR_NOTCH_WIDTH,
+    CALENDAR_UNHOVER_TIMEOUT_MS,
+)
 from utils.dictation_service import DictationService, DictationState
 from utils import text_inject
 from utils.version import APP_VERSION
@@ -157,7 +173,11 @@ class NotchWidget(QWidget):
         self.idle_w = 160
         self.idle_h = 32
         self.hover_w = 440
-        self.hover_h = 54
+        self.hover_h = 60
+
+        # State 2 Multi-page navigation (0: Normal Tasks/Time, 1: Weather, 2: System Stats)
+        self.notch_page = 0
+        self.page_dot_rects = []
 
         self._is_hovered = False
         self.anim = None
@@ -192,6 +212,7 @@ class NotchWidget(QWidget):
         self.hover_card = False
         self.hover_cb = False
         self.hover_play = False
+        self.hover_time_box = False
         self.is_active_focus = False
         self.task_completed_anim = False
 
@@ -444,6 +465,35 @@ class NotchWidget(QWidget):
         self.app_search_widget.request_geometry_update.connect(self._on_app_search_geometry_requested)
         self.app_search_widget.app_launched.connect(self._on_app_search_launched)
         self.app_search_widget.closed.connect(self.collapse_app_search)
+
+        # Weather stage embedded in notch
+        self.weather_in_notch = False
+        self.weather_widget = NotchWeatherWidget(self, parent=self)
+        self.weather_widget.hide()
+        self.weather_widget.closed.connect(self.collapse_weather)
+        self.weather_collapse_timer = QTimer(self)
+        self.weather_collapse_timer.setSingleShot(True)
+        self.weather_collapse_timer.timeout.connect(self._on_weather_unhover_timeout)
+
+        # Hardware monitor stage embedded in notch
+        self.hardware_in_notch = False
+        self.hardware_widget = NotchHardwareWidget(self, parent=self)
+        self.hardware_widget.hide()
+        self.hardware_widget.closed.connect(self.collapse_hardware)
+        self.hardware_collapse_timer = QTimer(self)
+        self.hardware_collapse_timer.setSingleShot(True)
+        self.hardware_collapse_timer.timeout.connect(self._on_hardware_unhover_timeout)
+
+        # Calendar stage embedded in notch
+        self.calendar_in_notch = False
+        self.calendar_widget = NotchCalendarWidget(self, parent=self)
+        self.calendar_widget.hide()
+        self.calendar_widget.closed.connect(self.collapse_calendar)
+        self.calendar_widget.height_changed.connect(self._on_calendar_height_changed)
+        self.calendar_collapse_timer = QTimer(self)
+        self.calendar_collapse_timer.setSingleShot(True)
+        self.calendar_collapse_timer.setInterval(CALENDAR_UNHOVER_TIMEOUT_MS)
+        self.calendar_collapse_timer.timeout.connect(self._on_calendar_unhover_timeout)
 
         # Reminder due alert HUD state
         self.active_reminder_alert = None
@@ -763,6 +813,9 @@ class NotchWidget(QWidget):
                     or getattr(self, "media_in_notch", False)
                     or getattr(self, "dictation_in_notch", False)
                     or getattr(self, "app_search_in_notch", False)
+                    or getattr(self, "weather_in_notch", False)
+                    or getattr(self, "hardware_in_notch", False)
+                    or getattr(self, "calendar_in_notch", False)
                     or getattr(self, "empty_notes_showing", False)
                     or getattr(self, "timer_is_running", False)
                     or getattr(self, "add_expanded", False)
@@ -788,7 +841,7 @@ class NotchWidget(QWidget):
 
             any_key_down = False
 
-            if not self._is_hovered and not self.is_creating_task and not self.timer_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "media_in_notch", False) and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not (ctrl_down or alt_down or win_down):
+            if not self._is_hovered and not self.is_creating_task and not self.timer_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "media_in_notch", False) and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "weather_in_notch", False) and not getattr(self, "hardware_in_notch", False) and not getattr(self, "calendar_in_notch", False) and not (ctrl_down or alt_down or win_down):
                 for vk in TYPING_KEYS:
                     is_down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
                     was_down = self.key_states.get(vk, False)
@@ -1128,6 +1181,34 @@ class NotchWidget(QWidget):
             if hasattr(self, "app_search_widget") and self.app_search_widget:
                 self.app_search_widget.hide()
                 self.app_search_widget.reset_state()
+
+        # 8b. Exit Weather mode
+        if getattr(self, "weather_in_notch", False) and entering_mode != "weather":
+            self.weather_in_notch = False
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "weather_collapse_timer"):
+                self.weather_collapse_timer.stop()
+            if hasattr(self, "sub_pill") and self.sub_pill and hasattr(self.sub_pill, "btn_weather"):
+                self.sub_pill.btn_weather.setActive(False)
+
+        # 8c. Exit Hardware Monitor mode
+        if getattr(self, "hardware_in_notch", False) and entering_mode != "hardware":
+            self.hardware_in_notch = False
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+            if hasattr(self, "hardware_collapse_timer"):
+                self.hardware_collapse_timer.stop()
+            if hasattr(self, "sub_pill") and self.sub_pill and hasattr(self.sub_pill, "btn_hardware"):
+                self.sub_pill.btn_hardware.setActive(False)
+
+        # 8d. Exit Calendar mode
+        if getattr(self, "calendar_in_notch", False) and entering_mode != "calendar":
+            self.calendar_in_notch = False
+            if hasattr(self, "calendar_widget") and self.calendar_widget:
+                self.calendar_widget.hide()
+            if hasattr(self, "calendar_collapse_timer"):
+                self.calendar_collapse_timer.stop()
 
         # 0. High priority exit for reminder alert (takes priority over everything)
         if entering_mode == "reminder_alert":
@@ -1518,6 +1599,12 @@ class NotchWidget(QWidget):
             self.update_ai_chat_geometry()
         if getattr(self, "reminders_in_notch", False):
             self.update_reminder_geometry()
+        if getattr(self, "notch_page", 0) == 1 and hasattr(self, "weather_widget") and self.weather_widget.isVisible():
+            self.update_weather_geometry()
+        if getattr(self, "notch_page", 0) == 2 and hasattr(self, "hardware_widget") and self.hardware_widget.isVisible():
+            self.update_hardware_geometry()
+        if getattr(self, "calendar_in_notch", False) and hasattr(self, "calendar_widget") and self.calendar_widget.isVisible():
+            self.update_calendar_geometry()
 
     def _suspend_reminders_list_for_creation(self):
         """Hide the reminders list child while a task/note editor owns the extended area."""
@@ -3308,6 +3395,225 @@ class NotchWidget(QWidget):
             h = max(30, int(self.height() - top_y - 4))
             self.app_search_widget.setGeometry(margin_x, top_y, w, h)
 
+    # ---------------------------------------------------------------------------
+    # State 2 Multi-Page Navigation (0: Normal Tasks/Time, 1: Weather, 2: System Stats)
+    # ---------------------------------------------------------------------------
+    def _get_notch_page_dimensions(self, page: int):
+        """Returns the optimal (width, height) tailored for the active notch page."""
+        if page == 1:
+            return WEATHER_NOTCH_WIDTH, WEATHER_NOTCH_HEIGHT
+        elif page == 2:
+            show_top = config.load_hardware_show_top_consumers(False)
+            h = HARDWARE_NOTCH_HEIGHT if show_top else HARDWARE_NOTCH_COMPACT_HEIGHT
+            return HARDWARE_NOTCH_WIDTH, h
+        else:
+            return max(380, self.calc_expanded_width()), 60
+
+    def set_notch_page(self, page: int):
+        """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
+        page = max(0, min(2, page))
+        self.notch_page = page
+        target_w, target_h = self._get_notch_page_dimensions(page)
+        self.hover_w = target_w
+        self.hover_h = target_h
+        if self._is_hovered or self.height() > 38:
+            self.animate_to(target_w, target_h, duration=160, easing=QEasingCurve.Type.OutQuad)
+        self._update_notch_page_view()
+
+    def _update_notch_page_view(self):
+        """Synchronize visibility and layout of page widgets according to notch_page."""
+        if not self._is_hovered and self.height() <= 38:
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+            return
+
+        if (getattr(self, "dictation_in_notch", False) or
+            getattr(self, "ai_chat_in_notch", False) or
+            getattr(self, "app_search_in_notch", False) or
+            getattr(self, "active_reminder_alert", None) is not None or
+            getattr(self, "active_update_alert", None) is not None or
+            getattr(self, "tasks_in_notch", False) or
+            getattr(self, "notes_in_notch", False) or
+            getattr(self, "calendar_in_notch", False) or
+            getattr(self, "is_creating_task", False) or
+            getattr(self, "is_creating_note", False)):
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+            return
+
+        if self.notch_page == 0:
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+        elif self.notch_page == 1:
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.update_weather_geometry()
+                self.weather_widget.show()
+                self.weather_widget.raise_()
+        elif self.notch_page == 2:
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.update_hardware_geometry()
+                self.hardware_widget.show()
+                self.hardware_widget.raise_()
+
+        self.update()
+
+    @property
+    def weather_in_notch(self):
+        return getattr(self, "notch_page", 0) == 1 and (self._is_hovered or self.height() > 38)
+
+    @weather_in_notch.setter
+    def weather_in_notch(self, val):
+        if val:
+            self.set_notch_page(1)
+        elif getattr(self, "notch_page", 0) == 1:
+            self.set_notch_page(0)
+
+    @property
+    def hardware_in_notch(self):
+        return getattr(self, "notch_page", 0) == 2 and (self._is_hovered or self.height() > 38)
+
+    @hardware_in_notch.setter
+    def hardware_in_notch(self, val):
+        if val:
+            self.set_notch_page(2)
+        elif getattr(self, "notch_page", 0) == 2:
+            self.set_notch_page(0)
+
+    def show_weather_in_notch(self):
+        """Expands the notch into the weather page (Page 1)."""
+        self.cancel_idle_animations()
+        self.add_expanded = False
+        self._is_hovered = True
+        self.set_notch_page(1)
+
+    def toggle_weather_in_notch(self):
+        if getattr(self, "notch_page", 0) == 1 and (self._is_hovered or self.height() > 38):
+            self.set_notch_page(0)
+        else:
+            self.show_weather_in_notch()
+
+    def collapse_weather(self):
+        """Collapse the weather page back to page 0 or idle."""
+        self.set_notch_page(0)
+        self.collapse_to_idle(force=True)
+
+    def _on_weather_unhover_timeout(self):
+        if getattr(self, "notch_page", 0) != 1:
+            return
+        if self.geometry().contains(QCursor.pos()):
+            return
+        self.collapse_weather()
+
+    def update_weather_geometry(self):
+        """Keep the weather panel bounds aligned within the notch."""
+        if hasattr(self, "weather_widget") and self.weather_widget:
+            margin_x = 10
+            top_y = 4
+            w = max(100, int(self.width() - (margin_x * 2)))
+            h = max(30, int(self.height() - top_y - 14))
+            self.weather_widget.setGeometry(margin_x, top_y, w, h)
+
+    def show_hardware_in_notch(self):
+        """Expands the notch into the hardware monitor page (Page 2)."""
+        self.cancel_idle_animations()
+        self.add_expanded = False
+        self._is_hovered = True
+        self.set_notch_page(2)
+
+    def toggle_hardware_in_notch(self):
+        if getattr(self, "notch_page", 0) == 2 and (self._is_hovered or self.height() > 38):
+            self.set_notch_page(0)
+        else:
+            self.show_hardware_in_notch()
+
+    def collapse_hardware(self):
+        """Collapse the hardware page back to page 0 or idle."""
+        self.set_notch_page(0)
+        self.collapse_to_idle(force=True)
+
+    def _on_hardware_unhover_timeout(self):
+        if getattr(self, "notch_page", 0) != 2:
+            return
+        if self.geometry().contains(QCursor.pos()):
+            return
+        self.collapse_hardware()
+
+    def update_hardware_geometry(self):
+        """Keep the hardware panel bounds aligned within the notch."""
+        if hasattr(self, "hardware_widget") and self.hardware_widget:
+            margin_x = 10
+            top_y = 4
+            w = max(100, int(self.width() - (margin_x * 2)))
+            h = max(30, int(self.height() - top_y - 14))
+            self.hardware_widget.setGeometry(margin_x, top_y, w, h)
+
+    def show_calendar_in_notch(self):
+        """Expands the notch into the full calendar and events stage."""
+        self.cancel_idle_animations()
+        self._exit_conflicting_modes("calendar")
+        self.calendar_in_notch = True
+        self._is_hovered = True
+        if not self.isVisible():
+            self.show()
+        if hasattr(self, "calendar_widget") and self.calendar_widget:
+            self.calendar_widget.reset_view()
+            cal_h = self.calendar_widget.preferred_height() + 24
+            target_w = max(500, CALENDAR_NOTCH_WIDTH)
+            self.animate_to(target_w, cal_h)
+            self.update_calendar_geometry()
+            self.calendar_widget.show()
+            self.calendar_widget.raise_()
+        self.update()
+
+    def toggle_calendar_in_notch(self):
+        if getattr(self, "calendar_in_notch", False):
+            self.collapse_calendar()
+        else:
+            self.show_calendar_in_notch()
+
+    def collapse_calendar(self):
+        """Collapse the calendar page back to idle."""
+        if not getattr(self, "calendar_in_notch", False):
+            return
+        self.calendar_in_notch = False
+        if hasattr(self, "calendar_widget") and self.calendar_widget:
+            self.calendar_widget.hide()
+        if hasattr(self, "calendar_collapse_timer"):
+            self.calendar_collapse_timer.stop()
+        self.collapse_to_idle(force=True)
+
+    def _on_calendar_unhover_timeout(self):
+        if not getattr(self, "calendar_in_notch", False):
+            return
+        if self.geometry().contains(QCursor.pos()):
+            return
+        self.collapse_calendar()
+
+    def _on_calendar_height_changed(self, new_content_h):
+        if getattr(self, "calendar_in_notch", False):
+            target_h = new_content_h + 24
+            target_w = max(500, CALENDAR_NOTCH_WIDTH)
+            self.animate_to(target_w, target_h)
+
+    def update_calendar_geometry(self):
+        """Keep the calendar panel bounds aligned within the notch."""
+        if hasattr(self, "calendar_widget") and self.calendar_widget:
+            pad_x = 12
+            pad_y = 10
+            w = max(100, int(self.width() - (pad_x * 2)))
+            h = max(100, int(self.height() - (pad_y * 2)))
+            self.calendar_widget.setGeometry(pad_x, pad_y, w, h)
+
     def get_notes_list(self):
         if self.main_window and hasattr(self.main_window, "notes"):
             return list(self.main_window.notes)
@@ -3345,8 +3651,21 @@ class NotchWidget(QWidget):
             return
         if not force and getattr(self, "app_search_in_notch", False):
             return
+        if not force and getattr(self, "calendar_in_notch", False):
+            return
         if self.timer_is_running:
             return
+        self.notch_page = 0
+        self.page_dot_rects = []
+        if hasattr(self, "weather_widget") and self.weather_widget:
+            self.weather_widget.hide()
+        if hasattr(self, "hardware_widget") and self.hardware_widget:
+            self.hardware_widget.hide()
+        self.calendar_in_notch = False
+        if hasattr(self, "calendar_widget") and self.calendar_widget:
+            self.calendar_widget.hide()
+        if hasattr(self, "calendar_collapse_timer"):
+            self.calendar_collapse_timer.stop()
         self._exit_conflicting_modes("idle")
         if hasattr(self, "timer_stopped_collapse_timer"):
             self.timer_stopped_collapse_timer.stop()
@@ -3852,29 +4171,59 @@ class NotchWidget(QWidget):
             event.accept()
             return
 
-        # When in hover state, scrolled on tasks (or notch), cycle / rotate other tasks
+        # When in hover state, handle wheel scroll:
+        # Case A: On Page 0, cursor over task card -> rotate tasks
+        # Case B: Anywhere else on notch (or page 1/2) -> cycle notch pages (0 <-> 1 <-> 2)
         if (self._is_hovered or self.height() > 38) and not self.add_expanded and not self.notes_in_notch and not self.tasks_in_notch and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not self.timer_is_running and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "media_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False):
-            tasks = []
-            if self.main_window and hasattr(self.main_window, "tasks"):
-                tasks = list(self.main_window.tasks)
-            else:
-                tasks = config.load_tasks()
+            self._is_hovered = True
+            if hasattr(self, "unhover_collapse_timer") and self.unhover_collapse_timer.isActive():
+                self.unhover_collapse_timer.stop()
+            if hasattr(self, "sub_pill_leave_timer") and self.sub_pill_leave_timer.isActive():
+                self.sub_pill_leave_timer.stop()
 
-            if len(tasks) > 1:
-                delta = event.angleDelta().y()
-                if delta == 0:
-                    delta = event.angleDelta().x()
-                if delta != 0:
-                    curr_idx = 0
-                    if self.current_random_task in tasks:
-                        curr_idx = tasks.index(self.current_random_task)
-                    step = 1 if delta < 0 else -1
-                    next_idx = (curr_idx + step) % len(tasks)
-                    self.current_random_task = tasks[next_idx]
-                    self.task_completed_anim = False
-                    self.hover_w = self.calc_expanded_width()
-                    self.animate_to(self.hover_w, self.hover_h)
-                    self.update()
+            pos = event.position().toPoint()
+            if getattr(self, "notch_page", 0) == 0 and hasattr(self, "task_card_rect") and self.task_card_rect.isValid() and self.task_card_rect.contains(pos):
+                tasks = []
+                if self.main_window and hasattr(self.main_window, "tasks"):
+                    tasks = list(self.main_window.tasks)
+                else:
+                    tasks = config.load_tasks()
+
+                if len(tasks) > 1:
+                    delta = event.angleDelta().y() or event.pixelDelta().y()
+                    if delta == 0:
+                        delta = event.angleDelta().x()
+                    if delta != 0:
+                        curr_idx = 0
+                        if self.current_random_task in tasks:
+                            curr_idx = tasks.index(self.current_random_task)
+                        step = 1 if delta < 0 else -1
+                        next_idx = (curr_idx + step) % len(tasks)
+                        self.current_random_task = tasks[next_idx]
+                        self.task_completed_anim = False
+                        target_w, target_h = self._get_notch_page_dimensions(0)
+                        self.hover_w = target_w
+                        self.hover_h = target_h
+                        self.animate_to(self.hover_w, self.hover_h, duration=160, easing=QEasingCurve.Type.OutQuad)
+                        self.update()
+                        event.accept()
+                        return
+
+            # Anywhere else on notch: cycle notch pages (no looping; boundary reached -> do nothing)
+            delta = event.angleDelta().y() or event.pixelDelta().y()
+            if delta == 0:
+                delta = event.angleDelta().x()
+            if delta != 0:
+                step = 1 if delta < 0 else -1
+                curr_page = getattr(self, "notch_page", 0)
+                new_page = curr_page + step
+
+                if new_page > 2 or new_page < 0:
+                    # Boundary reached: do nothing (don't loop and don't collapse)
+                    event.accept()
+                    return
+                else:
+                    self.set_notch_page(new_page)
                     event.accept()
                     return
 
@@ -3892,6 +4241,13 @@ class NotchWidget(QWidget):
         self.cancel_idle_animations()
 
         if getattr(self, "ai_chat_in_notch", False) or getattr(self, "reminders_in_notch", False):
+            if event:
+                super().enterEvent(event)
+            return
+
+        if getattr(self, "calendar_in_notch", False):
+            if hasattr(self, "calendar_collapse_timer"):
+                self.calendar_collapse_timer.stop()
             if event:
                 super().enterEvent(event)
             return
@@ -3922,11 +4278,14 @@ class NotchWidget(QWidget):
                     self.timer_stopped_collapse_timer.stop()
             if not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch:
                 self.update_notch_timer_geometry()
-        elif not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch and not self.tasks_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False):
+        elif not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch and not self.tasks_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "calendar_in_notch", False):
             self.pick_random_task()
             self.task_completed_anim = False
-            self.hover_w = self.calc_expanded_width()
+            target_w, target_h = self._get_notch_page_dimensions(self.notch_page)
+            self.hover_w = target_w
+            self.hover_h = target_h
             self.animate_to(self.hover_w, self.hover_h)
+            self._update_notch_page_view()
 
         # Start timer to show sub-pill after 0.5s of hovering
         if hasattr(self, "sub_pill") and not self.sub_pill.isVisible() and not self.sub_pill_hover_timer.isActive() and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False):
@@ -3936,11 +4295,19 @@ class NotchWidget(QWidget):
             super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self.hover_time_box = False
         if getattr(self, "active_update_alert", None) is not None:
             self.hover_update_now = False
             self.hover_update_later = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
+            if event:
+                super().leaveEvent(event)
+            return
+
+        if getattr(self, "calendar_in_notch", False):
+            if hasattr(self, "calendar_collapse_timer"):
+                self.calendar_collapse_timer.start(CALENDAR_UNHOVER_TIMEOUT_MS)
             if event:
                 super().leaveEvent(event)
             return
@@ -4154,6 +4521,17 @@ class NotchWidget(QWidget):
                 self.update()
             return
 
+        # Check if hovering over bottom page indicator dots in State 2
+        if hasattr(self, "page_dot_rects") and self.page_dot_rects:
+            for dot_rect, _ in self.page_dot_rects:
+                if dot_rect.contains(pos):
+                    self.setCursor(Qt.CursorShape.PointingHandCursor)
+                    return
+
+        if getattr(self, "notch_page", 0) != 0 and (self._is_hovered or self.height() > 38):
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+
         if (self._is_hovered or self.add_expanded or self.timer_in_notch or self.notes_in_notch or self.tasks_in_notch or self.is_creating_note or self.is_creating_task or getattr(self, "ai_chat_in_notch", False) or getattr(self, "media_in_notch", False) or getattr(self, "reminders_in_notch", False) or getattr(self, "app_search_in_notch", False)) and self.height() > 38:
             if self.unhover_collapse_timer.isActive():
                 self.unhover_collapse_timer.stop()
@@ -4299,8 +4677,9 @@ class NotchWidget(QWidget):
                 new_hover_card = self.task_card_rect.contains(pos)
                 new_hover_cb = self.task_cb_rect.contains(pos)
                 new_hover_play = self.task_play_rect.contains(pos)
+                new_hover_time = hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.contains(pos)
 
-                if new_hover_btn or new_hover_card or new_hover_cb or new_hover_play:
+                if new_hover_btn or new_hover_card or new_hover_cb or new_hover_play or new_hover_time:
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
                 else:
                     self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -4308,11 +4687,13 @@ class NotchWidget(QWidget):
                 if (new_hover_btn != self.hover_add_btn or
                     new_hover_card != self.hover_card or
                     new_hover_cb != self.hover_cb or
-                    new_hover_play != self.hover_play):
+                    new_hover_play != self.hover_play or
+                    new_hover_time != getattr(self, "hover_time_box", False)):
                     self.hover_add_btn = new_hover_btn
                     self.hover_card = new_hover_card
                     self.hover_cb = new_hover_cb
                     self.hover_play = new_hover_play
+                    self.hover_time_box = new_hover_time
                     self.update()
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -4370,6 +4751,10 @@ class NotchWidget(QWidget):
         super().hideEvent(event)
 
     def closeEvent(self, event):
+        if hasattr(self, "anim") and self.anim:
+            self.anim.stop()
+        if hasattr(self, "hardware_widget") and self.hardware_widget:
+            self.hardware_widget.hide()
         if hasattr(self, "sub_pill") and self.sub_pill:
             self.sub_pill.close()
         super().closeEvent(event)
@@ -4555,6 +4940,10 @@ class NotchWidget(QWidget):
                 self.update_reminder_geometry()
             if getattr(self, "app_search_in_notch", False):
                 self.update_app_search_geometry()
+            if getattr(self, "weather_in_notch", False):
+                self.update_weather_geometry()
+            if getattr(self, "hardware_in_notch", False):
+                self.update_hardware_geometry()
 
         def on_anim_finished():
             self.ensure_stays_on_top()
@@ -4566,6 +4955,10 @@ class NotchWidget(QWidget):
                 self.update_reminder_geometry()
             if getattr(self, "app_search_in_notch", False):
                 self.update_app_search_geometry()
+            if getattr(self, "weather_in_notch", False):
+                self.update_weather_geometry()
+            if getattr(self, "hardware_in_notch", False):
+                self.update_hardware_geometry()
 
         self.anim.valueChanged.connect(on_anim_step)
         self.anim.finished.connect(on_anim_finished)
@@ -4576,8 +4969,19 @@ class NotchWidget(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
 
+            # State 2 page indicator dots click (Page 0: Tasks/Time, Page 1: Weather, Page 2: System Stats)
+            if hasattr(self, "page_dot_rects") and self.page_dot_rects:
+                for dot_rect, p_idx in self.page_dot_rects:
+                    if dot_rect.contains(pos):
+                        self.set_notch_page(p_idx)
+                        return
+
             # App search mode (children handle clicks)
             if getattr(self, "app_search_in_notch", False):
+                return
+
+            # Calendar mode (calendar widget handles clicks)
+            if getattr(self, "calendar_in_notch", False):
                 return
 
             # Voice dictation cancel (×) - always interactive regardless of notch height
@@ -4612,6 +5016,9 @@ class NotchWidget(QWidget):
 
             # When expanded, handle clicks on interactive elements only
             if self.height() > 38:
+                if getattr(self, "notch_page", 0) != 0:
+                    # Weather and Hardware monitor pages handle clicks in child widgets
+                    return
 
                 # Media player in notch clicks (play/pause, prev, next)
                 if getattr(self, "media_in_notch", False):
@@ -4753,6 +5160,9 @@ class NotchWidget(QWidget):
                         self.start_notch_reminder_creation()
                         return
                 else:
+                    if hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.contains(pos):
+                        self.toggle_calendar_in_notch()
+                        return
                     if self.add_btn_rect.contains(pos):
                         self.expand_add_mode()
                         return
@@ -4815,10 +5225,10 @@ class NotchWidget(QWidget):
         if hasattr(self, "sub_pill") and self.sub_pill and self.sub_pill.isVisible():
             self.sub_pill.recenter_under_notch()
 
-        # Scale curve radiuses smoothly with height
-        h_ratio = max(0.0, min(1.0, (h - self.idle_h) / max(1.0, (self.hover_h - self.idle_h))))
-        ear_r = 7.0 + h_ratio * 3.0      # 7px to 10px
-        corner_r = 12.0 + h_ratio * 4.0  # 12px to 16px
+        # Scale curve radiuses smoothly with height based on base State 2 height (60px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, 60.0 - float(self.idle_h))))
+        ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
+        corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
 
         # Construct Apple MacBook notch silhouette
         path = QPainterPath()
@@ -4890,6 +5300,7 @@ class NotchWidget(QWidget):
         # Opacity Crossfade: Eyes fade while expanding, Time displays once expanded
         # -------------------------------------------------------------
         # Only crossfade to expanded header when hovered or creating task/note or timer/notes is in notch
+        is_page_weather_or_hardware = getattr(self, "notch_page", 0) in (1, 2)
         if getattr(self, "dictation_in_notch", False):
             eyes_opacity = 0.0
             time_opacity = 0.0
@@ -4899,9 +5310,12 @@ class NotchWidget(QWidget):
         elif getattr(self, "media_in_notch", False) and not self.timer_in_notch:
             eyes_opacity = 0.0
             time_opacity = 0.0
+        elif is_page_weather_or_hardware or h >= 48.0:
+            eyes_opacity = 0.0
+            time_opacity = 1.0 if getattr(self, "notch_page", 0) == 0 else 0.0
         elif self._is_hovered or self.add_expanded or self.is_creating_task or self.is_creating_note or self.notes_in_notch or self.timer_in_notch or self.tasks_in_notch or getattr(self, "reminders_in_notch", False) or getattr(self, "active_reminder_alert", None) is not None or getattr(self, "active_update_alert", None) is not None:
-            eyes_opacity = max(0.0, min(1.0, 1.0 - (h_ratio / 0.45)))
-            time_opacity = max(0.0, min(1.0, (h_ratio - 0.50) / 0.50))
+            eyes_opacity = max(0.0, min(1.0, 1.0 - (open_progress / 0.45)))
+            time_opacity = max(0.0, min(1.0, (open_progress - 0.50) / 0.50)) if getattr(self, "notch_page", 0) == 0 else 0.0
         else:
             eyes_opacity = 1.0
             time_opacity = 0.0
@@ -4916,6 +5330,11 @@ class NotchWidget(QWidget):
 
         # System-Wide App Search HUD
         if getattr(self, "app_search_in_notch", False):
+            painter.restore()
+            return
+
+        # Embedded Calendar Stage HUD
+        if getattr(self, "calendar_in_notch", False):
             painter.restore()
             return
 
@@ -5090,9 +5509,9 @@ class NotchWidget(QWidget):
             painter.drawLine(QPointF(cx + p_len, cy - p_len), QPointF(cx - p_len, cy + p_len))
 
 
-        # 2. Render Header (Time | Add Button | Random Task) once expanded
+        # 2. Render Header (Time | Add Button | Random Task) once expanded (Page 0 only)
         media_shares_row = self.media_timer_combined()
-        if time_opacity > 0.001 and not getattr(self, "ai_chat_in_notch", False) and (not getattr(self, "media_in_notch", False) or media_shares_row):
+        if getattr(self, "notch_page", 0) == 0 and time_opacity > 0.001 and not getattr(self, "ai_chat_in_notch", False) and (not getattr(self, "media_in_notch", False) or media_shares_row):
             self.draw_expanded_header(painter, w, h, time_opacity, accent_color)
 
         # 3. Render Media Player Controls once expanded (beside the timer row when both are open)
@@ -5102,7 +5521,49 @@ class NotchWidget(QWidget):
                 self._media_row_left_x = 0.0
             self.draw_media_in_notch(painter, w, h, 1.0, accent_color, left_x=left_x)
 
+        # 4. State 2 Bottom Page Indicator Dots (0: Tasks/Time, 1: Weather, 2: System Stats)
+        self.draw_page_indicator_dots(painter, w, h, accent_color)
+
         painter.restore()
+
+    def draw_page_indicator_dots(self, painter, w, h, accent_color):
+        """Draws the bottom 3-dot page indicator for State 2 (Page 0, 1, 2)."""
+        if (self._is_hovered or h >= 48.0) and not self.tasks_in_notch and not self.notes_in_notch and not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "calendar_in_notch", False) and getattr(self, "active_reminder_alert", None) is None and getattr(self, "active_update_alert", None) is None:
+            self.page_dot_rects = []
+            num_pages = 3
+            active_page = getattr(self, "notch_page", 0)
+            active_dot_w = 14.0
+            inactive_dot_w = 4.0
+            dot_h = 3.5
+            dot_gap = 5.0
+
+            total_dots_w = (active_dot_w if active_page == 0 else inactive_dot_w) + dot_gap + \
+                           (active_dot_w if active_page == 1 else inactive_dot_w) + dot_gap + \
+                           (active_dot_w if active_page == 2 else inactive_dot_w)
+
+            start_dot_x = (w - total_dots_w) / 2.0
+            dot_y = h - 7.5
+            cur_x = start_dot_x
+
+            for p_idx in range(num_pages):
+                is_act = (p_idx == active_page)
+                dw = active_dot_w if is_act else inactive_dot_w
+                dot_rect = QRectF(cur_x, dot_y, dw, dot_h)
+                hitbox = QRect(int(cur_x - 4), int(dot_y - 6), int(dw + 8), 16)
+                self.page_dot_rects.append((hitbox, p_idx))
+
+                painter.setPen(Qt.PenStyle.NoPen)
+                if is_act:
+                    dot_col = QColor(accent_color)
+                    painter.setBrush(QBrush(dot_col))
+                else:
+                    dot_col = QColor(255, 255, 255)
+                    dot_col.setAlpha(65)
+                    painter.setBrush(QBrush(dot_col))
+                painter.drawRoundedRect(dot_rect, 1.75, 1.75)
+                cur_x += dw + dot_gap
+        else:
+            self.page_dot_rects = []
 
     def draw_ground_time_peek(self, painter, w, h, opacity, accent_color):
         """Draws the scrolling time and date peek in ground stage (spacious 200x38 notch)."""
@@ -5266,7 +5727,7 @@ class NotchWidget(QWidget):
         # A media row beside the timer is taller, so that row centres on the notch height
         media_shares_row = self.media_timer_combined()
         if h >= 54.0 and not media_shares_row:
-            top_cy = 27.0
+            top_cy = 30.0 if h >= 75.0 else 26.0
         else:
             top_cy = h / 2.0
 
@@ -5918,12 +6379,18 @@ class NotchWidget(QWidget):
 
                 if show_box:
                     bg = QColor(theme.SEC_CARD_COLOR)
-                    bg.setAlpha(int(152 * opacity))
-                    border = QColor(theme.BORDER_COLOR)
-                    if not border.isValid():
-                        border = QColor(255, 255, 255, int(24 * opacity))
+                    if getattr(self, "hover_time_box", False):
+                        bg = bg.lighter(130)
+                        bg.setAlpha(int(200 * opacity))
+                        border = QColor(accent_color)
+                        border.setAlpha(int(160 * opacity))
                     else:
-                        border.setAlpha(int(max(24, border.alpha()) * opacity))
+                        bg.setAlpha(int(152 * opacity))
+                        border = QColor(theme.BORDER_COLOR)
+                        if not border.isValid():
+                            border = QColor(255, 255, 255, int(24 * opacity))
+                        else:
+                            border.setAlpha(int(max(24, border.alpha()) * opacity))
                     painter.setBrush(bg)
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
@@ -5964,12 +6431,18 @@ class NotchWidget(QWidget):
 
                 if show_box:
                     bg = QColor(theme.SEC_CARD_COLOR)
-                    bg.setAlpha(int(152 * opacity))
-                    border = QColor(theme.BORDER_COLOR)
-                    if not border.isValid():
-                        border = QColor(255, 255, 255, int(24 * opacity))
+                    if getattr(self, "hover_time_box", False):
+                        bg = bg.lighter(130)
+                        bg.setAlpha(int(200 * opacity))
+                        border = QColor(accent_color)
+                        border.setAlpha(int(160 * opacity))
                     else:
-                        border.setAlpha(int(max(24, border.alpha()) * opacity))
+                        bg.setAlpha(int(152 * opacity))
+                        border = QColor(theme.BORDER_COLOR)
+                        if not border.isValid():
+                            border = QColor(255, 255, 255, int(24 * opacity))
+                        else:
+                            border.setAlpha(int(max(24, border.alpha()) * opacity))
                     painter.setBrush(bg)
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
@@ -6144,311 +6617,328 @@ class NotchWidget(QWidget):
                     r_cross.render(painter, cross_icon_rect)
                 return
 
-            has_task = bool(self.current_random_task)
-            if has_task:
-                display_task = self.current_random_task
-                painter.setFont(font_task)
-                fm_task = painter.fontMetrics()
-                max_task_text_w = 220.0
-                elided_task = fm_task.elidedText(display_task, Qt.TextElideMode.ElideRight, int(max_task_text_w))
-                w_task_text = float(fm_task.horizontalAdvance(elided_task))
-
-                cb_size = 18.0
-                cb_gap = 10.0
-                play_size = 20.0
-                play_gap = 10.0
-                card_pad_h = 14.0
-
-                task_card_w = card_pad_h + cb_size + cb_gap + w_task_text + play_gap + play_size + card_pad_h
-                task_card_h = 36.0
-                total_content_w_normal = time_box_w + gap_elements + task_card_w + gap_elements + add_btn_size
-            else:
-                task_card_w = 0.0
-                task_card_h = 36.0
-                total_content_w_normal = time_box_w + gap_elements + add_btn_size
-
-            total_content_w_add = time_box_w + 14.0 + capsule_w
-            p = self._add_expand_progress
-            curr_total_content_w = (1.0 - p) * total_content_w_normal + p * total_content_w_add
-
-            start_x = max(margin_x, (w - curr_total_content_w) / 2.0)
-
-            # -------------------------------------------------------------
-            # 1. Time + Date Block
-            # -------------------------------------------------------------
-            time_box_x = start_x
-            time_box_y = top_cy - (time_box_h / 2.0)
-            time_box_rect = QRectF(time_box_x, time_box_y, time_box_w, time_box_h)
-            self.time_box_rect = QRect(int(time_box_x), int(time_box_y), int(time_box_w), int(time_box_h))
-
-            if show_box:
-                bg = QColor(theme.SEC_CARD_COLOR)
-                bg.setAlpha(int(152 * opacity))
-                border = QColor(theme.BORDER_COLOR)
-                if not border.isValid():
-                    border = QColor(255, 255, 255, int(24 * opacity))
-                else:
-                    border.setAlpha(int(max(24, border.alpha()) * opacity))
-                painter.setBrush(bg)
-                painter.setPen(QPen(border, 1.0))
-                painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
-
-            inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
-            time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
-
-            painter.setFont(font_time)
-            time_col = self.clock_time_color(accent_color, opacity, spec)
-            painter.setPen(time_col)
-            painter.drawText(QPointF(inner_time_x, time_text_y), time_str)
-
-            if show_date:
-                painter.setFont(font_date)
-                date_col = QColor(theme.TEXT_SECONDARY)
-                date_col.setAlphaF(opacity)
-                painter.setPen(date_col)
-                date_text_y = time_box_y + 28.0
-                painter.drawText(QPointF(inner_time_x, date_text_y), full_date)
-
-            # -------------------------------------------------------------
-            # 2. Normal Mode: Task Card + Circular Add Button (fading out when expanding add)
-            # -------------------------------------------------------------
-            if p < 0.99:
-                norm_opacity = opacity * max(0.0, 1.0 - p * 1.5)
-
+            if getattr(self, "notch_page", 0) == 0:
+                has_task = bool(self.current_random_task)
                 if has_task:
-                    # Task Card
-                    task_card_x = time_box_x + time_box_w + gap_elements
-                    task_card_y = top_cy - (task_card_h / 2.0)
-                    task_card_rect = QRectF(task_card_x, task_card_y, task_card_w, task_card_h)
-                    if not self.add_expanded:
-                        self.task_card_rect = QRect(int(task_card_x), int(task_card_y), int(task_card_w), int(task_card_h))
-
-                    task_color = QColor(get_task_color(display_task))
-
-                    # Card container background & border (with attention-grabbing task color effect)
-                    card_bg = QColor(theme.MAIN_CARD_COLOR)
-                    card_bg.setAlpha(int((185 if self.hover_card else 145) * norm_opacity))
-
-                    b_base = QColor(theme.BORDER_COLOR)
-                    blend_factor = 0.50 if self.hover_card else 0.35
-                    r = b_base.red() + int((task_color.red() - b_base.red()) * blend_factor)
-                    g = b_base.green() + int((task_color.green() - b_base.green()) * blend_factor)
-                    b = b_base.blue() + int((task_color.blue() - b_base.blue()) * blend_factor)
-                    card_border = QColor(r, g, b, int((95 if self.hover_card else 72) * norm_opacity))
-
-                    painter.setBrush(QBrush(card_bg))
-                    painter.setPen(QPen(card_border, 1.0))
-                    painter.drawRoundedRect(task_card_rect, 10.0, 10.0)
-
-                    # Checkbox [ ] inside card
-                    cb_x = task_card_x + card_pad_h
-                    cb_y = top_cy - (cb_size / 2.0)
-                    cb_rect = QRectF(cb_x, cb_y, cb_size, cb_size)
-                    if not self.add_expanded:
-                        self.task_cb_rect = QRect(int(cb_x - 3), int(cb_y - 3), int(cb_size + 6), int(cb_size + 6))
-
-                    if self.task_completed_anim:
-                        c_fill = QColor(task_color)
-                        c_fill.setAlphaF(norm_opacity)
-                        painter.setBrush(QBrush(c_fill))
-                        painter.setPen(QPen(c_fill, 1.5))
-                        painter.drawRoundedRect(cb_rect, 4.0, 4.0)
-
-                        chk_pen = QColor(255, 255, 255)
-                        chk_pen.setAlphaF(norm_opacity)
-                        painter.setPen(QPen(chk_pen, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-                        chk = QPainterPath()
-                        chk.moveTo(cb_x + 4.2, cb_y + 9.0)
-                        chk.lineTo(cb_x + 7.5, cb_y + 13.0)
-                        chk.lineTo(cb_x + 13.8, cb_y + 5.2)
-                        painter.drawPath(chk)
-                    else:
-                        cb_fill_alpha = int((55 if (self.hover_cb or self.hover_card) else 38) * norm_opacity)
-                        cb_fill = QColor(task_color.red(), task_color.green(), task_color.blue(), cb_fill_alpha)
-                        cb_border = QColor(task_color)
-                        cb_border.setAlphaF(norm_opacity)
-                        painter.setBrush(QBrush(cb_fill))
-                        painter.setPen(QPen(cb_border, 1.5 if (self.hover_cb or self.hover_card) else 1.3))
-                        painter.drawRoundedRect(cb_rect, 4.0, 4.0)
-
-                    # Task text (in task_color to grab attention!)
+                    display_task = self.current_random_task
                     painter.setFont(font_task)
-                    text_x = cb_x + cb_size + cb_gap
-                    text_y = top_cy + (fm_task.capHeight() / 2.0)
+                    fm_task = painter.fontMetrics()
+                    max_task_text_w = 220.0
+                    elided_task = fm_task.elidedText(display_task, Qt.TextElideMode.ElideRight, int(max_task_text_w))
+                    w_task_text = float(fm_task.horizontalAdvance(elided_task))
 
-                    t_col = QColor(task_color)
-                    t_col.setAlphaF(norm_opacity)
-                    painter.setPen(t_col)
-                    painter.drawText(QPointF(text_x, text_y), elided_task)
+                    cb_size = 18.0
+                    cb_gap = 10.0
+                    play_size = 20.0
+                    play_gap = 10.0
+                    card_pad_h = 14.0
 
-                    # Start Task (Play / Focus) Button
-                    play_x = text_x + w_task_text + play_gap
-                    play_y = top_cy - (play_size / 2.0)
-                    play_rect = QRectF(play_x, play_y, play_size, play_size)
-                    if not self.add_expanded:
-                        self.task_play_rect = QRect(int(play_x - 3), int(play_y - 3), int(play_size + 6), int(play_size + 6))
+                    task_card_w = card_pad_h + cb_size + cb_gap + w_task_text + play_gap + play_size + card_pad_h
+                    task_card_h = 36.0
+                    total_content_w_normal = time_box_w + gap_elements + task_card_w + gap_elements + add_btn_size
+                else:
+                    task_card_w = 0.0
+                    task_card_h = 36.0
+                    total_content_w_normal = time_box_w + gap_elements + add_btn_size
 
-                    if self.is_active_focus:
-                        svg_template = STOP_SVG
-                        svg_color = QColor("#FF453A") if not self.hover_play else QColor("#FF6961")
+                total_content_w_add = time_box_w + 14.0 + capsule_w
+                p = self._add_expand_progress
+                curr_total_content_w = (1.0 - p) * total_content_w_normal + p * total_content_w_add
+
+                start_x = max(margin_x, (w - curr_total_content_w) / 2.0)
+
+                # -------------------------------------------------------------
+                # 1. Time + Date Block
+                # -------------------------------------------------------------
+                time_box_x = start_x
+                time_box_y = top_cy - (time_box_h / 2.0)
+                time_box_rect = QRectF(time_box_x, time_box_y, time_box_w, time_box_h)
+                self.time_box_rect = QRect(int(time_box_x), int(time_box_y), int(time_box_w), int(time_box_h))
+
+                if show_box:
+                    bg = QColor(theme.SEC_CARD_COLOR)
+                    if getattr(self, "hover_time_box", False):
+                        bg = bg.lighter(130)
+                        bg.setAlpha(int(200 * opacity))
+                        border = QColor(accent_color)
+                        border.setAlpha(int(160 * opacity))
                     else:
-                        svg_template = FOCUS_SVG
-                        svg_color = task_color if self.hover_play else QColor(task_color.red(), task_color.green(), task_color.blue(), 180)
+                        bg.setAlpha(int(152 * opacity))
+                        border = QColor(theme.BORDER_COLOR)
+                        if not border.isValid():
+                            border = QColor(255, 255, 255, int(24 * opacity))
+                        else:
+                            border.setAlpha(int(max(24, border.alpha()) * opacity))
+                    painter.setBrush(bg)
+                    painter.setPen(QPen(border, 1.0))
+                    painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
 
-                    colored_svg = svg_template.replace("COLOR_PLACEHOLDER", svg_color.name())
-                    renderer = QSvgRenderer(QByteArray(colored_svg.encode("utf-8")))
-                    renderer.render(painter, play_rect)
+                inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
+                time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
 
-                    add_btn_x = task_card_x + task_card_w + gap_elements
+                painter.setFont(font_time)
+                time_col = self.clock_time_color(accent_color, opacity, spec)
+                painter.setPen(time_col)
+                painter.drawText(QPointF(inner_time_x, time_text_y), time_str)
+
+                if show_date:
+                    painter.setFont(font_date)
+                    date_col = QColor(theme.TEXT_SECONDARY)
+                    date_col.setAlphaF(opacity)
+                    painter.setPen(date_col)
+                    date_text_y = time_box_y + 28.0
+                    painter.drawText(QPointF(inner_time_x, date_text_y), full_date)
+
+                # -------------------------------------------------------------
+                # 2. Normal Mode: Task Card + Circular Add Button (fading out when expanding add)
+                # -------------------------------------------------------------
+                if p < 0.99:
+                    norm_opacity = opacity * max(0.0, 1.0 - p * 1.5)
+
+                    if has_task:
+                        # Task Card
+                        task_card_x = time_box_x + time_box_w + gap_elements
+                        task_card_y = top_cy - (task_card_h / 2.0)
+                        task_card_rect = QRectF(task_card_x, task_card_y, task_card_w, task_card_h)
+                        if not self.add_expanded:
+                            self.task_card_rect = QRect(int(task_card_x), int(task_card_y), int(task_card_w), int(task_card_h))
+
+                        task_color = QColor(get_task_color(display_task))
+
+                        # Card container background & border (with attention-grabbing task color effect)
+                        card_bg = QColor(theme.MAIN_CARD_COLOR)
+                        card_bg.setAlpha(int((185 if self.hover_card else 145) * norm_opacity))
+
+                        b_base = QColor(theme.BORDER_COLOR)
+                        blend_factor = 0.50 if self.hover_card else 0.35
+                        r = b_base.red() + int((task_color.red() - b_base.red()) * blend_factor)
+                        g = b_base.green() + int((task_color.green() - b_base.green()) * blend_factor)
+                        b = b_base.blue() + int((task_color.blue() - b_base.blue()) * blend_factor)
+                        card_border = QColor(r, g, b, int((95 if self.hover_card else 72) * norm_opacity))
+
+                        painter.setBrush(QBrush(card_bg))
+                        painter.setPen(QPen(card_border, 1.0))
+                        painter.drawRoundedRect(task_card_rect, 10.0, 10.0)
+
+                        # Checkbox [ ] inside card
+                        cb_x = task_card_x + card_pad_h
+                        cb_y = top_cy - (cb_size / 2.0)
+                        cb_rect = QRectF(cb_x, cb_y, cb_size, cb_size)
+                        if not self.add_expanded:
+                            self.task_cb_rect = QRect(int(cb_x - 3), int(cb_y - 3), int(cb_size + 6), int(cb_size + 6))
+
+                        if self.task_completed_anim:
+                            c_fill = QColor(task_color)
+                            c_fill.setAlphaF(norm_opacity)
+                            painter.setBrush(QBrush(c_fill))
+                            painter.setPen(QPen(c_fill, 1.5))
+                            painter.drawRoundedRect(cb_rect, 4.0, 4.0)
+
+                            chk_pen = QColor(255, 255, 255)
+                            chk_pen.setAlphaF(norm_opacity)
+                            painter.setPen(QPen(chk_pen, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                            chk = QPainterPath()
+                            chk.moveTo(cb_x + 4.2, cb_y + 9.0)
+                            chk.lineTo(cb_x + 7.5, cb_y + 13.0)
+                            chk.lineTo(cb_x + 13.8, cb_y + 5.2)
+                            painter.drawPath(chk)
+                        else:
+                            cb_fill_alpha = int((55 if (self.hover_cb or self.hover_card) else 38) * norm_opacity)
+                            cb_fill = QColor(task_color.red(), task_color.green(), task_color.blue(), cb_fill_alpha)
+                            cb_border = QColor(task_color)
+                            cb_border.setAlphaF(norm_opacity)
+                            painter.setBrush(QBrush(cb_fill))
+                            painter.setPen(QPen(cb_border, 1.5 if (self.hover_cb or self.hover_card) else 1.3))
+                            painter.drawRoundedRect(cb_rect, 4.0, 4.0)
+
+                        # Task text (in task_color to grab attention!)
+                        painter.setFont(font_task)
+                        text_x = cb_x + cb_size + cb_gap
+                        text_y = top_cy + (fm_task.capHeight() / 2.0)
+
+                        t_col = QColor(task_color)
+                        t_col.setAlphaF(norm_opacity)
+                        painter.setPen(t_col)
+                        painter.drawText(QPointF(text_x, text_y), elided_task)
+
+                        # Start Task (Play / Focus) Button
+                        play_x = text_x + w_task_text + play_gap
+                        play_y = top_cy - (play_size / 2.0)
+                        play_rect = QRectF(play_x, play_y, play_size, play_size)
+                        if not self.add_expanded:
+                            self.task_play_rect = QRect(int(play_x - 3), int(play_y - 3), int(play_size + 6), int(play_size + 6))
+
+                        if self.is_active_focus:
+                            svg_template = STOP_SVG
+                            svg_color = QColor("#FF453A") if not self.hover_play else QColor("#FF6961")
+                        else:
+                            svg_template = FOCUS_SVG
+                            svg_color = task_color if self.hover_play else QColor(task_color.red(), task_color.green(), task_color.blue(), 180)
+
+                        colored_svg = svg_template.replace("COLOR_PLACEHOLDER", svg_color.name())
+                        renderer = QSvgRenderer(QByteArray(colored_svg.encode("utf-8")))
+                        renderer.render(painter, play_rect)
+
+                        add_btn_x = task_card_x + task_card_w + gap_elements
+                    else:
+                        self.task_card_rect = QRect()
+                        self.task_cb_rect = QRect()
+                        self.task_play_rect = QRect()
+                        add_btn_x = time_box_x + time_box_w + gap_elements
+
+                    # Circular Add Button (when not expanded)
+                    add_btn_y = top_cy - (add_btn_size / 2.0)
+                    add_btn_rect = QRectF(add_btn_x, add_btn_y, add_btn_size, add_btn_size)
+                    if not self.add_expanded:
+                        self.add_btn_rect = QRect(int(add_btn_x - 2), int(add_btn_y - 2), int(add_btn_size + 4), int(add_btn_size + 4))
+
+                    add_bg = QColor(accent_color)
+                    if self.hover_add_btn:
+                        add_bg = add_bg.lighter(115)
+                    add_bg.setAlphaF(norm_opacity)
+
+                    painter.setBrush(QBrush(add_bg))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawEllipse(add_btn_rect)
+
+                    # White Plus '+' inside circular button
+                    plus_pen = QColor(255, 255, 255)
+                    plus_pen.setAlphaF(norm_opacity)
+                    painter.setPen(QPen(plus_pen, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    ac_x = add_btn_x + add_btn_size / 2.0
+                    ac_y = add_btn_y + add_btn_size / 2.0
+                    p_len = 5.0
+                    painter.drawLine(QPointF(ac_x - p_len, ac_y), QPointF(ac_x + p_len, ac_y))
+                    painter.drawLine(QPointF(ac_x, ac_y - p_len), QPointF(ac_x, ac_y + p_len))
                 else:
                     self.task_card_rect = QRect()
                     self.task_cb_rect = QRect()
                     self.task_play_rect = QRect()
-                    add_btn_x = time_box_x + time_box_w + gap_elements
 
-                # Circular Add Button (when not expanded)
-                add_btn_y = top_cy - (add_btn_size / 2.0)
-                add_btn_rect = QRectF(add_btn_x, add_btn_y, add_btn_size, add_btn_size)
-                if not self.add_expanded:
-                    self.add_btn_rect = QRect(int(add_btn_x - 2), int(add_btn_y - 2), int(add_btn_size + 4), int(add_btn_size + 4))
+                # -------------------------------------------------------------
+                # 3. Add Expanded Mode: Capsule [Task] [Note] [x]
+                # -------------------------------------------------------------
+                if p > 0.01:
+                    add_opacity = opacity * min(1.0, p * 1.5)
+                    capsule_x = time_box_x + time_box_w + 14.0
+                    capsule_y = top_cy - 16.0
+                    capsule_rect = QRectF(capsule_x, capsule_y, capsule_w, 32.0)
 
-                add_bg = QColor(accent_color)
-                if self.hover_add_btn:
-                    add_bg = add_bg.lighter(115)
-                add_bg.setAlphaF(norm_opacity)
+                    # Capsule glassy background & border
+                    cap_bg = QColor(theme.SEC_CARD_COLOR)
+                    cap_bg.setAlpha(int(152 * add_opacity))
+                    cap_border = QColor(theme.BORDER_COLOR)
+                    if not cap_border.isValid():
+                        cap_border = QColor(255, 255, 255, int(24 * add_opacity))
+                    else:
+                        cap_border.setAlpha(int(max(24, cap_border.alpha()) * add_opacity))
+                    painter.setBrush(QBrush(cap_bg))
+                    painter.setPen(QPen(cap_border, 1.0))
+                    painter.drawRoundedRect(capsule_rect, 16.0, 16.0)
 
-                painter.setBrush(QBrush(add_bg))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(add_btn_rect)
+                    font_sub = QFont()
+                    font_sub.setFamilies([font_family, "Segoe UI", "Arial", "sans-serif"])
+                    font_sub.setPointSize(10)
+                    font_sub.setWeight(QFont.Weight.Bold)
+                    painter.setFont(font_sub)
 
-                # White Plus '+' inside circular button
-                plus_pen = QColor(255, 255, 255)
-                plus_pen.setAlphaF(norm_opacity)
-                painter.setPen(QPen(plus_pen, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-                ac_x = add_btn_x + add_btn_size / 2.0
-                ac_y = add_btn_y + add_btn_size / 2.0
-                p_len = 5.0
-                painter.drawLine(QPointF(ac_x - p_len, ac_y), QPointF(ac_x + p_len, ac_y))
-                painter.drawLine(QPointF(ac_x, ac_y - p_len), QPointF(ac_x, ac_y + p_len))
+                    # [Task] Sub-Button
+                    task_btn_rect = QRectF(capsule_x + 3.0, top_cy - 14.0, 40.0, 28.0)
+                    if self.add_expanded:
+                        self.sub_task_rect = QRect(int(task_btn_rect.x()), int(task_btn_rect.y()), int(task_btn_rect.width()), int(task_btn_rect.height()))
+
+                    if self.is_creating_task or self.hover_sub_task:
+                        h_bg = QColor(theme.HOVER_COLOR)
+                        h_bg.setAlphaF(add_opacity)
+                        painter.setBrush(QBrush(h_bg))
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawRoundedRect(task_btn_rect, 14.0, 14.0)
+                        t_col = QColor(accent_color)
+                    else:
+                        t_col = QColor(theme.TEXT_SECONDARY)
+                    t_col.setAlphaF(add_opacity)
+                    painter.setPen(t_col)
+                    painter.drawText(task_btn_rect, Qt.AlignmentFlag.AlignCenter, "Task")
+
+                    # [Note] Sub-Button
+                    note_btn_rect = QRectF(capsule_x + 45.0, top_cy - 14.0, 40.0, 28.0)
+                    if self.add_expanded:
+                        self.sub_note_rect = QRect(int(note_btn_rect.x()), int(note_btn_rect.y()), int(note_btn_rect.width()), int(note_btn_rect.height()))
+
+                    if self.hover_sub_note:
+                        h_bg = QColor(theme.HOVER_COLOR)
+                        h_bg.setAlphaF(add_opacity)
+                        painter.setBrush(QBrush(h_bg))
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawRoundedRect(note_btn_rect, 6.0, 6.0)
+                        t_col = QColor(accent_color)
+                    else:
+                        t_col = QColor(theme.TEXT_SECONDARY)
+                    t_col.setAlphaF(add_opacity)
+                    painter.setPen(t_col)
+                    painter.drawText(note_btn_rect, Qt.AlignmentFlag.AlignCenter, "Note")
+
+                    # [Reminder] Sub-Button
+                    reminder_btn_rect = QRectF(capsule_x + 87.0, top_cy - 14.0, 64.0, 28.0)
+                    if self.add_expanded:
+                        self.sub_reminder_rect = QRect(int(reminder_btn_rect.x()), int(reminder_btn_rect.y()), int(reminder_btn_rect.width()), int(reminder_btn_rect.height()))
+
+                    if self.hover_sub_reminder:
+                        h_bg = QColor(theme.HOVER_COLOR)
+                        h_bg.setAlphaF(add_opacity)
+                        painter.setBrush(QBrush(h_bg))
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawRoundedRect(reminder_btn_rect, 6.0, 6.0)
+                        t_col = QColor(accent_color)
+                    else:
+                        t_col = QColor(theme.TEXT_SECONDARY)
+                    t_col.setAlphaF(add_opacity)
+                    painter.setPen(t_col)
+                    painter.drawText(reminder_btn_rect, Qt.AlignmentFlag.AlignCenter, "Reminder")
+
+                    # Toggle / Close [x] Button (rotates from + to x by 135 deg)
+                    toggle_x = capsule_x + 153.0
+                    toggle_y = top_cy - 14.0
+                    toggle_size = 28.0
+                    toggle_rect = QRectF(toggle_x, toggle_y, toggle_size, toggle_size)
+                    if self.add_expanded:
+                        self.add_toggle_rect = QRect(int(toggle_x), int(toggle_y), int(toggle_size), int(toggle_size))
+                        self.add_btn_rect = self.add_toggle_rect
+
+                    tog_bg = QColor(accent_color)
+                    if self.hover_add_btn:
+                        tog_bg = tog_bg.lighter(115)
+                    tog_bg.setAlphaF(add_opacity)
+                    painter.setBrush(QBrush(tog_bg))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawEllipse(toggle_rect)
+
+                    angle = p * 135.0
+                    painter.save()
+                    painter.translate(toggle_rect.center())
+                    painter.rotate(angle)
+                    plus_pen = QColor(255, 255, 255)
+                    plus_pen.setAlphaF(add_opacity)
+                    painter.setPen(QPen(plus_pen, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    painter.drawLine(QPointF(-5.0, 0.0), QPointF(5.0, 0.0))
+                    painter.drawLine(QPointF(0.0, -5.0), QPointF(0.0, 5.0))
+                    painter.restore()
+                else:
+                    if not self.add_expanded:
+                        self.sub_task_rect = QRect()
+                        self.sub_note_rect = QRect()
+                        self.sub_reminder_rect = QRect()
+                        self.add_toggle_rect = QRect()
             else:
+                self.time_box_rect = QRect()
                 self.task_card_rect = QRect()
                 self.task_cb_rect = QRect()
                 self.task_play_rect = QRect()
-
-            # -------------------------------------------------------------
-            # 3. Add Expanded Mode: Capsule [Task] [Note] [x]
-            # -------------------------------------------------------------
-            if p > 0.01:
-                add_opacity = opacity * min(1.0, p * 1.5)
-                capsule_x = time_box_x + time_box_w + 14.0
-                capsule_y = top_cy - 16.0
-                capsule_rect = QRectF(capsule_x, capsule_y, capsule_w, 32.0)
-
-                # Capsule glassy background & border
-                cap_bg = QColor(theme.SEC_CARD_COLOR)
-                cap_bg.setAlpha(int(152 * add_opacity))
-                cap_border = QColor(theme.BORDER_COLOR)
-                if not cap_border.isValid():
-                    cap_border = QColor(255, 255, 255, int(24 * add_opacity))
-                else:
-                    cap_border.setAlpha(int(max(24, cap_border.alpha()) * add_opacity))
-                painter.setBrush(QBrush(cap_bg))
-                painter.setPen(QPen(cap_border, 1.0))
-                painter.drawRoundedRect(capsule_rect, 16.0, 16.0)
-
-                font_sub = QFont()
-                font_sub.setFamilies([font_family, "Segoe UI", "Arial", "sans-serif"])
-                font_sub.setPointSize(10)
-                font_sub.setWeight(QFont.Weight.Bold)
-                painter.setFont(font_sub)
-
-                # [Task] Sub-Button
-                task_btn_rect = QRectF(capsule_x + 3.0, top_cy - 14.0, 40.0, 28.0)
-                if self.add_expanded:
-                    self.sub_task_rect = QRect(int(task_btn_rect.x()), int(task_btn_rect.y()), int(task_btn_rect.width()), int(task_btn_rect.height()))
-
-                if self.is_creating_task or self.hover_sub_task:
-                    h_bg = QColor(theme.HOVER_COLOR)
-                    h_bg.setAlphaF(add_opacity)
-                    painter.setBrush(QBrush(h_bg))
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawRoundedRect(task_btn_rect, 14.0, 14.0)
-                    t_col = QColor(accent_color)
-                else:
-                    t_col = QColor(theme.TEXT_SECONDARY)
-                t_col.setAlphaF(add_opacity)
-                painter.setPen(t_col)
-                painter.drawText(task_btn_rect, Qt.AlignmentFlag.AlignCenter, "Task")
-
-                # [Note] Sub-Button
-                note_btn_rect = QRectF(capsule_x + 45.0, top_cy - 14.0, 40.0, 28.0)
-                if self.add_expanded:
-                    self.sub_note_rect = QRect(int(note_btn_rect.x()), int(note_btn_rect.y()), int(note_btn_rect.width()), int(note_btn_rect.height()))
-
-                if self.hover_sub_note:
-                    h_bg = QColor(theme.HOVER_COLOR)
-                    h_bg.setAlphaF(add_opacity)
-                    painter.setBrush(QBrush(h_bg))
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawRoundedRect(note_btn_rect, 6.0, 6.0)
-                    t_col = QColor(accent_color)
-                else:
-                    t_col = QColor(theme.TEXT_SECONDARY)
-                t_col.setAlphaF(add_opacity)
-                painter.setPen(t_col)
-                painter.drawText(note_btn_rect, Qt.AlignmentFlag.AlignCenter, "Note")
-
-                # [Reminder] Sub-Button
-                reminder_btn_rect = QRectF(capsule_x + 87.0, top_cy - 14.0, 64.0, 28.0)
-                if self.add_expanded:
-                    self.sub_reminder_rect = QRect(int(reminder_btn_rect.x()), int(reminder_btn_rect.y()), int(reminder_btn_rect.width()), int(reminder_btn_rect.height()))
-
-                if self.hover_sub_reminder:
-                    h_bg = QColor(theme.HOVER_COLOR)
-                    h_bg.setAlphaF(add_opacity)
-                    painter.setBrush(QBrush(h_bg))
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawRoundedRect(reminder_btn_rect, 6.0, 6.0)
-                    t_col = QColor(accent_color)
-                else:
-                    t_col = QColor(theme.TEXT_SECONDARY)
-                t_col.setAlphaF(add_opacity)
-                painter.setPen(t_col)
-                painter.drawText(reminder_btn_rect, Qt.AlignmentFlag.AlignCenter, "Reminder")
-
-                # Toggle / Close [x] Button (rotates from + to x by 135 deg)
-                toggle_x = capsule_x + 153.0
-                toggle_y = top_cy - 14.0
-                toggle_size = 28.0
-                toggle_rect = QRectF(toggle_x, toggle_y, toggle_size, toggle_size)
-                if self.add_expanded:
-                    self.add_toggle_rect = QRect(int(toggle_x), int(toggle_y), int(toggle_size), int(toggle_size))
-                    self.add_btn_rect = self.add_toggle_rect
-
-                tog_bg = QColor(accent_color)
-                if self.hover_add_btn:
-                    tog_bg = tog_bg.lighter(115)
-                tog_bg.setAlphaF(add_opacity)
-                painter.setBrush(QBrush(tog_bg))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(toggle_rect)
-
-                angle = p * 135.0
-                painter.save()
-                painter.translate(toggle_rect.center())
-                painter.rotate(angle)
-                plus_pen = QColor(255, 255, 255)
-                plus_pen.setAlphaF(add_opacity)
-                painter.setPen(QPen(plus_pen, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-                painter.drawLine(QPointF(-5.0, 0.0), QPointF(5.0, 0.0))
-                painter.drawLine(QPointF(0.0, -5.0), QPointF(0.0, 5.0))
-                painter.restore()
-            else:
-                if not self.add_expanded:
-                    self.sub_task_rect = QRect()
-                    self.sub_note_rect = QRect()
-                    self.sub_reminder_rect = QRect()
-                    self.add_toggle_rect = QRect()
+                self.add_btn_rect = QRect()
+                self.sub_task_rect = QRect()
+                self.sub_note_rect = QRect()
+                self.sub_reminder_rect = QRect()
+                self.add_toggle_rect = QRect()
 
         # -------------------------------------------------------------
         # 4. Extended Area for Task List / Task Creation / Note Creation / Notes Grid (when h > 58.0)

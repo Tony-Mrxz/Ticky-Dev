@@ -245,6 +245,30 @@ def save_ai_model(value):
     """Save selected AI Model."""
     save_config({"ai_model": value})
 
+# Providers that talk to a local OpenAI-compatible server instead of a cloud API.
+LOCAL_AI_PROVIDERS = {
+    "Ollama": "http://localhost:11434",
+    "LM Studio": "http://localhost:1234",
+    "Custom (OpenAI-compatible)": "http://localhost:8080",
+}
+
+def is_local_ai_provider(provider):
+    """True when the provider runs against a user-hosted server (no API key)."""
+    name = (provider or "").strip().casefold()
+    return any(name == known.casefold() for known in LOCAL_AI_PROVIDERS)
+
+def load_local_llm_url(provider):
+    """Server base URL for a local provider; falls back to its well-known default."""
+    default = LOCAL_AI_PROVIDERS.get((provider or "").strip(), "")
+    saved = load_config().get("local_llm_urls", {}).get(provider, "")
+    return (saved or default).rstrip("/")
+
+def save_local_llm_url(provider, url):
+    """Persist the server base URL for a local provider."""
+    urls = load_config().get("local_llm_urls", {})
+    urls[provider] = (url or "").strip().rstrip("/")
+    save_config({"local_llm_urls": urls})
+
 def load_mic_device_id(default_value=""):
     """Load preferred microphone device id for voice dictation (empty = system default)."""
     return load_config().get("mic_device_id", default_value)
@@ -288,6 +312,14 @@ def save_reminders(reminders_list):
     """Save the list of active reminders."""
     save_config({"reminders": reminders_list})
 
+def load_events():
+    """Load user-created calendar events ({id, title, date, time})."""
+    return load_config().get("events", [])
+
+def save_events(events_list):
+    """Save user-created calendar events."""
+    save_config({"events": events_list})
+
 def load_hide_while_streaming(default_value=False):
     """Load whether hide while streaming mode is enabled."""
     return load_config().get("hide_while_streaming", default_value)
@@ -322,5 +354,38 @@ def load_check_for_updates(default_value=True):
 def save_check_for_updates(value):
     """Save whether Ticky asks GitHub for a newer release shortly after startup."""
     save_config({"check_for_updates": bool(value)})
+
+def load_weather_city(default_value=""):
+    """Load manually configured weather city (empty string means auto-detect via IP)."""
+    return load_config().get("weather_city", default_value)
+
+def save_weather_city(city_str):
+    """Save manually configured weather city."""
+    save_config({"weather_city": city_str.strip()})
+
+def load_weather_unit(default_value="C"):
+    """Load weather temperature unit: 'C' (Celsius) or 'F' (Fahrenheit)."""
+    return load_config().get("weather_unit", default_value)
+
+def save_weather_unit(value):
+    """Save weather temperature unit ('C' or 'F')."""
+    save_config({"weather_unit": value})
+
+def load_weather_location():
+    """Load saved weather location dict with city, lat, lon, etc."""
+    return load_config().get("weather_location", None)
+
+def save_weather_location(location_data):
+    """Save cached or user-configured weather location."""
+    save_config({"weather_location": location_data})
+
+def load_hardware_show_top_consumers(default_value=False):
+    """Load whether to show top resource consumers in notch hardware stage (default: False)."""
+    return load_config().get("hardware_show_top_consumers", default_value)
+
+def save_hardware_show_top_consumers(value: bool):
+    """Save whether to show top resource consumers in notch hardware stage."""
+    save_config({"hardware_show_top_consumers": bool(value)})
+
 
 

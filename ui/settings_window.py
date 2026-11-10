@@ -1,10 +1,10 @@
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent, QTimer, QRectF, QRegularExpression
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal, QPoint, QEvent, QTimer, QRectF, QRegularExpression, QUrl
 from PySide6.QtWidgets import (QWidget, QAbstractButton, QVBoxLayout, QHBoxLayout, QGridLayout,
                                QLabel, QPushButton, QGraphicsDropShadowEffect,
                                QStackedWidget, QSlider, QLineEdit, QFrame, QScrollArea,
                                QGraphicsOpacityEffect, QComboBox, QListWidget, QListWidgetItem,
                                QColorDialog)
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QKeySequence, QRegularExpressionValidator
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QKeySequence, QRegularExpressionValidator, QDesktopServices
 from styles import theme, qss
 from utils import config
 from utils.version import APP_VERSION
@@ -444,7 +444,9 @@ class SettingsWindow(QWidget):
             ("Appearance", 2),
             ("Media Player", 3),
             ("AI Config", 4),
-            ("Shortcuts", 5)
+            ("Weather", 5),
+            ("Hardware Monitor", 6),
+            ("Shortcuts", 7),
         ]
         
         for name, idx in sidebar_items:
@@ -1266,7 +1268,7 @@ class SettingsWindow(QWidget):
         lbl_provider.setStyleSheet("font-weight: bold; font-size: 11px;")
         
         self.combo_provider = QComboBox(ai_creds_section)
-        self.combo_provider.addItems(["Gemini", "OpenAI", "Claude", "Groq", "OpenRouter"])
+        self.combo_provider.addItems(["Gemini", "OpenAI", "Claude", "Groq", "OpenRouter", "Ollama", "LM Studio", "Custom (OpenAI-compatible)"])
         self.combo_provider.setStyleSheet(f"""
             QComboBox {{
                 background-color: rgba(0, 0, 0, 60);
@@ -1296,10 +1298,10 @@ class SettingsWindow(QWidget):
         ai_creds_inner.addWidget(sep)
         
         # API Key Row
-        lbl_ai_key_title = QLabel("API Key", ai_creds_section)
-        lbl_ai_key_title.setObjectName("SettingLabel")
-        lbl_ai_key_title.setStyleSheet("font-weight: bold; font-size: 11px;")
-        ai_creds_inner.addWidget(lbl_ai_key_title)
+        self.lbl_ai_key_title = QLabel("API Key", ai_creds_section)
+        self.lbl_ai_key_title.setObjectName("SettingLabel")
+        self.lbl_ai_key_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_creds_inner.addWidget(self.lbl_ai_key_title)
         
         self.input_ai_key = QLineEdit(ai_creds_section)
         self.input_ai_key.setObjectName("SpotifyInput")
@@ -1319,6 +1321,27 @@ class SettingsWindow(QWidget):
         self.input_ai_model.setPlaceholderText("e.g. gemini-1.5-flash")
         self.input_ai_model.setText(config.load_ai_model())
         ai_creds_inner.addWidget(self.input_ai_model)
+
+        # Local server row — only visible for Ollama / LM Studio / Custom providers
+        self.lbl_local_server_title = QLabel("Server URL", ai_creds_section)
+        self.lbl_local_server_title.setObjectName("SettingLabel")
+        self.lbl_local_server_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+        ai_creds_inner.addWidget(self.lbl_local_server_title)
+
+        local_server_row = QHBoxLayout()
+        local_server_row.setSpacing(6)
+        self.input_local_url = QLineEdit(ai_creds_section)
+        self.input_local_url.setObjectName("SpotifyInput")
+        self.input_local_url.setPlaceholderText("http://localhost:11434")
+        local_server_row.addWidget(self.input_local_url, 1)
+
+        self.btn_fetch_models = QPushButton("Fetch Models", ai_creds_section)
+        self.btn_fetch_models.setStyleSheet(self.get_action_button_style())
+        self.btn_fetch_models.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_fetch_models.setToolTip("Ask the local server which models are available and pick one")
+        self.btn_fetch_models.clicked.connect(self.fetch_local_models_clicked)
+        local_server_row.addWidget(self.btn_fetch_models, 0)
+        ai_creds_inner.addLayout(local_server_row)
 
         # Voice Dictation section (microphone selection)
         dictation_section = QFrame(ai_content)
@@ -1413,7 +1436,532 @@ class SettingsWindow(QWidget):
         
         self.stacked_widget.addWidget(page_ai)
         
-        # --- Page 7: Shortcuts Settings ---
+        # --- Page 6: Weather Settings ---
+        page_weather = QWidget()
+        page_weather_layout = QVBoxLayout(page_weather)
+        page_weather_layout.setContentsMargins(0, 0, 0, 0)
+        page_weather_layout.setSpacing(10)
+
+        weather_scroll = QScrollArea(page_weather)
+        weather_scroll.setObjectName("WeatherSettingsScroll")
+        weather_scroll.setWidgetResizable(True)
+        weather_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        weather_content = QWidget()
+        weather_content.setObjectName("WeatherScrollContent")
+        weather_content_layout = QVBoxLayout(weather_content)
+        weather_content_layout.setContentsMargins(0, 0, 4, 0)
+        weather_content_layout.setSpacing(12)
+
+        font_family = config.load_font_family("DM Sans")
+        accent_color = config.load_accent_color(theme.ACCENT_COLOR)
+
+        def _add_weather_row(layout, label, desc, widget):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 8, 0, 8)
+            text_col = QVBoxLayout()
+            text_col.setSpacing(1)
+            parent = layout.parentWidget()
+            lbl = QLabel(label, parent)
+            lbl.setObjectName("SettingLabel")
+            lbl_desc = QLabel(desc, parent)
+            lbl_desc.setObjectName("SettingDescription")
+            text_col.addWidget(lbl)
+            text_col.addWidget(lbl_desc)
+            row.addLayout(text_col, 1)
+            row.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(row)
+
+        def _add_weather_divider(layout):
+            parent = layout.parentWidget()
+            div = QFrame(parent)
+            div.setObjectName("SettingRowDivider")
+            div.setFixedHeight(1)
+            layout.addWidget(div)
+
+        # 1. Guide Section
+        weather_guide_section = QFrame(weather_content)
+        weather_guide_section.setObjectName("SettingSection")
+        weather_guide_inner = QVBoxLayout(weather_guide_section)
+        weather_guide_inner.setContentsMargins(12, 10, 12, 10)
+
+        lbl_weather_guide_title = QLabel("Weather in Notch", weather_guide_section)
+        lbl_weather_guide_title.setObjectName("SettingLabel")
+        lbl_weather_guide_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+
+        lbl_weather_guide_desc = QLabel(
+            "Ticky shows live weather on Page 2 of the Notch. "
+            "You can specify a custom city override (ideal if your ISP location doesn't match where you live) "
+            "or leave it empty to auto-detect via IP. UV Index and Precipitation have been streamlined out for a clean, minimal UI.",
+            weather_guide_section
+        )
+        lbl_weather_guide_desc.setObjectName("SettingDescription")
+        lbl_weather_guide_desc.setWordWrap(True)
+        lbl_weather_guide_desc.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 9px; line-height: 1.3;")
+
+        weather_guide_inner.addWidget(lbl_weather_guide_title)
+        weather_guide_inner.addWidget(lbl_weather_guide_desc)
+        weather_content_layout.addWidget(weather_guide_section)
+
+        # 2. Location & City Override Section
+        lbl_weather_loc_title = QLabel("Location Configuration", weather_content)
+        lbl_weather_loc_title.setObjectName("SettingSectionTitle")
+        weather_content_layout.addWidget(lbl_weather_loc_title)
+
+        weather_loc_section = QFrame(weather_content)
+        weather_loc_section.setObjectName("SettingSection")
+        weather_loc_inner = QVBoxLayout(weather_loc_section)
+        weather_loc_inner.setContentsMargins(12, 10, 12, 10)
+        weather_loc_inner.setSpacing(0)
+
+        city_input_row = QWidget(weather_loc_section)
+        city_row_layout = QHBoxLayout(city_input_row)
+        city_row_layout.setContentsMargins(0, 0, 0, 0)
+        city_row_layout.setSpacing(6)
+
+        self.edit_weather_city = QLineEdit(city_input_row)
+        self.edit_weather_city.setPlaceholderText("Auto-detect (e.g. Visakhapatnam)")
+        self.edit_weather_city.setText(config.load_weather_city())
+        self.edit_weather_city.setFixedHeight(28)
+        self.edit_weather_city.setMinimumWidth(180)
+        self.edit_weather_city.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-family: '{font_family}';
+                font-size: 11.5px;
+                padding: 2px 8px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {accent_color};
+            }}
+        """)
+
+        btn_save_city = QPushButton("Save", city_input_row)
+        btn_save_city.setFixedHeight(28)
+        btn_save_city.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save_city.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {accent_color};
+                border: none;
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-weight: 600;
+                padding: 0 12px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                opacity: 0.9;
+            }}
+        """)
+
+        btn_auto_city = QPushButton("Auto", city_input_row)
+        btn_auto_city.setFixedHeight(28)
+        btn_auto_city.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_auto_city.setToolTip("Clear custom city and revert to automatic IP detection")
+        btn_auto_city.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.07);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-weight: 600;
+                padding: 0 10px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 255, 255, 0.12);
+            }}
+        """)
+
+        def _on_save_city():
+            val = self.edit_weather_city.text().strip()
+            config.save_weather_city(val)
+            from utils.weather_service import WeatherService
+            WeatherService.get_instance().refresh(force=True)
+
+        def _on_auto_city():
+            self.edit_weather_city.setText("")
+            config.save_weather_city("")
+            from utils.weather_service import WeatherService
+            WeatherService.get_instance().refresh(force=True)
+
+        self.edit_weather_city.returnPressed.connect(_on_save_city)
+        btn_save_city.clicked.connect(_on_save_city)
+        btn_auto_city.clicked.connect(_on_auto_city)
+
+        city_row_layout.addWidget(self.edit_weather_city)
+        city_row_layout.addWidget(btn_save_city)
+        city_row_layout.addWidget(btn_auto_city)
+
+        _add_weather_row(
+            weather_loc_inner,
+            "Custom City Override",
+            "Manually set your city, or click 'Auto' to detect via IP",
+            city_input_row
+        )
+
+        _add_weather_divider(weather_loc_inner)
+
+        # Temperature Unit Row
+        unit_btn_container = QWidget(weather_loc_section)
+        unit_layout = QHBoxLayout(unit_btn_container)
+        unit_layout.setContentsMargins(0, 0, 0, 0)
+        unit_layout.setSpacing(4)
+
+        current_unit = config.load_weather_unit("C")
+
+        btn_unit_c = QPushButton("Celsius (°C)", unit_btn_container)
+        btn_unit_f = QPushButton("Fahrenheit (°F)", unit_btn_container)
+        for b in (btn_unit_c, btn_unit_f):
+            b.setFixedHeight(28)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        def _update_unit_styles(active_u):
+            for b, u in ((btn_unit_c, "C"), (btn_unit_f, "F")):
+                if u == active_u:
+                    b.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: {accent_color};
+                            border: none;
+                            border-radius: 6px;
+                            color: #FFFFFF;
+                            font-weight: 700;
+                            padding: 0 10px;
+                            font-size: 11px;
+                        }}
+                    """)
+                else:
+                    b.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: rgba(255, 255, 255, 0.05);
+                            border: 1px solid rgba(255, 255, 255, 0.10);
+                            border-radius: 6px;
+                            color: {theme.TEXT_SECONDARY};
+                            font-weight: 500;
+                            padding: 0 10px;
+                            font-size: 11px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: rgba(255, 255, 255, 0.10);
+                            color: #FFFFFF;
+                        }}
+                    """)
+
+        _update_unit_styles(current_unit)
+
+        def _select_unit(unit):
+            config.save_weather_unit(unit)
+            _update_unit_styles(unit)
+            from utils.weather_service import WeatherService
+            WeatherService.get_instance().refresh(force=True)
+
+        btn_unit_c.clicked.connect(lambda: _select_unit("C"))
+        btn_unit_f.clicked.connect(lambda: _select_unit("F"))
+
+        unit_layout.addWidget(btn_unit_c)
+        unit_layout.addWidget(btn_unit_f)
+
+        _add_weather_row(
+            weather_loc_inner,
+            "Temperature Unit",
+            "Choose temperature format for notch weather display",
+            unit_btn_container
+        )
+
+        _add_weather_divider(weather_loc_inner)
+
+        # Refresh Weather Row
+        btn_refresh_now = QPushButton("Refresh Now", weather_loc_section)
+        btn_refresh_now.setFixedHeight(28)
+        btn_refresh_now.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_refresh_now.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-weight: 600;
+                padding: 0 14px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                border-color: {accent_color};
+                background-color: rgba(255, 255, 255, 0.14);
+            }}
+        """)
+        def _do_refresh():
+            btn_refresh_now.setText("Refreshing...")
+            btn_refresh_now.setEnabled(False)
+            from utils.weather_service import WeatherService
+            WeatherService.get_instance().refresh(force=True)
+            QTimer.singleShot(1200, lambda: (btn_refresh_now.setText("Refresh Now"), btn_refresh_now.setEnabled(True)))
+
+        btn_refresh_now.clicked.connect(_do_refresh)
+
+        _add_weather_row(
+            weather_loc_inner,
+            "Force Sync",
+            "Instantly re-fetch latest weather from Open-Meteo",
+            btn_refresh_now
+        )
+
+        weather_content_layout.addWidget(weather_loc_section)
+        weather_content_layout.addStretch()
+
+        weather_scroll.setWidget(weather_content)
+        page_weather_layout.addWidget(weather_scroll)
+
+        self.stacked_widget.addWidget(page_weather)
+
+        # --- Page 7: Hardware Monitor Settings ---
+        page_hardware = QWidget()
+        page_hardware_layout = QVBoxLayout(page_hardware)
+        page_hardware_layout.setContentsMargins(0, 0, 0, 0)
+        page_hardware_layout.setSpacing(10)
+
+        hw_scroll = QScrollArea(page_hardware)
+        hw_scroll.setObjectName("HardwareSettingsScroll")
+        hw_scroll.setWidgetResizable(True)
+        hw_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        hw_content = QWidget()
+        hw_content.setObjectName("HardwareScrollContent")
+        hw_content_layout = QVBoxLayout(hw_content)
+        hw_content_layout.setContentsMargins(0, 0, 4, 0)
+        hw_content_layout.setSpacing(12)
+
+        def _add_hw_row(layout, label, desc, widget):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 8, 0, 8)
+            text_col = QVBoxLayout()
+            text_col.setSpacing(1)
+            parent = layout.parentWidget()
+            lbl = QLabel(label, parent)
+            lbl.setObjectName("SettingLabel")
+            lbl_desc = QLabel(desc, parent)
+            lbl_desc.setObjectName("SettingDescription")
+            text_col.addWidget(lbl)
+            text_col.addWidget(lbl_desc)
+            row.addLayout(text_col, 1)
+            row.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(row)
+
+        def _add_hw_divider(layout):
+            parent = layout.parentWidget()
+            div = QFrame(parent)
+            div.setObjectName("SettingRowDivider")
+            div.setFixedHeight(1)
+            layout.addWidget(div)
+
+        # 1. Guide Section
+        hw_guide_section = QFrame(hw_content)
+        hw_guide_section.setObjectName("SettingSection")
+        hw_guide_inner = QVBoxLayout(hw_guide_section)
+        hw_guide_inner.setContentsMargins(12, 10, 12, 10)
+
+        lbl_hw_guide_title = QLabel("Hardware Monitor in Notch", hw_guide_section)
+        lbl_hw_guide_title.setObjectName("SettingLabel")
+        lbl_hw_guide_title.setStyleSheet("font-weight: bold; font-size: 11px;")
+
+        lbl_hw_guide_desc = QLabel(
+            "Live system diagnostics are displayed on Page 3 of the Notch (CPU %, RAM %, live Network speed, and GPU %). "
+            "Background polling is automatically paused whenever the stage is hidden, resulting in zero background CPU impact.",
+            hw_guide_section
+        )
+        lbl_hw_guide_desc.setObjectName("SettingDescription")
+        lbl_hw_guide_desc.setWordWrap(True)
+        lbl_hw_guide_desc.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 9px; line-height: 1.3;")
+
+        hw_guide_inner.addWidget(lbl_hw_guide_title)
+        hw_guide_inner.addWidget(lbl_hw_guide_desc)
+        hw_content_layout.addWidget(hw_guide_section)
+
+        # 2. Display Options Section
+        lbl_hw_disp_title = QLabel("Display Options", hw_content)
+        lbl_hw_disp_title.setObjectName("SettingSectionTitle")
+        hw_content_layout.addWidget(lbl_hw_disp_title)
+
+        hw_disp_section = QFrame(hw_content)
+        hw_disp_section.setObjectName("SettingSection")
+        hw_disp_inner = QVBoxLayout(hw_disp_section)
+        hw_disp_inner.setContentsMargins(12, 10, 12, 10)
+        hw_disp_inner.setSpacing(0)
+
+        self.switch_hw_top_consumers = ToggleSwitch(hw_disp_section)
+        self.switch_hw_top_consumers.setChecked(config.load_hardware_show_top_consumers(False))
+
+        def _on_top_consumers_toggled(checked):
+            config.save_hardware_show_top_consumers(checked)
+            if self.parent_window and hasattr(self.parent_window, "notch_widget"):
+                notch = self.parent_window.notch_widget
+                if notch:
+                    if hasattr(notch, "hardware_widget") and notch.hardware_widget:
+                        notch.hardware_widget.procs_container.setVisible(checked)
+                    if getattr(notch, "notch_page", 0) == 2:
+                        w, h = notch._get_notch_page_dimensions(2)
+                        notch.hover_w = w
+                        notch.hover_h = h
+                        notch.animate_to(w, h)
+
+        self.switch_hw_top_consumers.toggled_state.connect(_on_top_consumers_toggled)
+
+        _add_hw_row(
+            hw_disp_inner,
+            "Show Top Resource Consumers",
+            "Display top 3 CPU processes row below metric cards (disabled by default)",
+            self.switch_hw_top_consumers
+        )
+
+        hw_content_layout.addWidget(hw_disp_section)
+
+        # 3. Mem Reduct Integration Section
+        lbl_memreduct_title = QLabel("Mem Reduct Integration", hw_content)
+        lbl_memreduct_title.setObjectName("SettingSectionTitle")
+        hw_content_layout.addWidget(lbl_memreduct_title)
+
+        memreduct_section = QFrame(hw_content)
+        memreduct_section.setObjectName("SettingSection")
+        memreduct_inner = QVBoxLayout(memreduct_section)
+        memreduct_inner.setContentsMargins(12, 10, 12, 10)
+        memreduct_inner.setSpacing(0)
+
+        from utils.memreduct import find_memreduct_executable, trigger_memreduct_clean
+
+        # Status badge row
+        status_row_widget = QWidget(memreduct_section)
+        status_row_layout = QHBoxLayout(status_row_widget)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.setSpacing(6)
+
+        self.lbl_memreduct_status = QLabel(status_row_widget)
+        self.lbl_memreduct_status.setStyleSheet("font-size: 11px; font-weight: 600;")
+
+        # Actions row widgets
+        actions_widget = QWidget(memreduct_section)
+        actions_layout = QHBoxLayout(actions_widget)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
+
+        btn_test_clean = QPushButton("🧹 Test Clean RAM", actions_widget)
+        btn_test_clean.setFixedHeight(28)
+        btn_test_clean.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_test_clean.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {accent_color};
+                border: none;
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-weight: 700;
+                padding: 0 12px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                opacity: 0.9;
+            }}
+            QPushButton:disabled {{
+                background-color: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.3);
+            }}
+        """)
+
+        def _refresh_memreduct_status(force=False):
+            exe_path = find_memreduct_executable(force_refresh=force)
+            if exe_path:
+                short_path = exe_path if len(exe_path) < 36 else "..." + exe_path[-33:]
+                self.lbl_memreduct_status.setText(f"✓ Detected ({short_path})")
+                self.lbl_memreduct_status.setStyleSheet("color: #4CAF50; font-size: 11px; font-weight: 700;")
+                btn_test_clean.setEnabled(True)
+            else:
+                self.lbl_memreduct_status.setText("✗ Not Detected")
+                self.lbl_memreduct_status.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 11px; font-weight: 600;")
+                btn_test_clean.setEnabled(False)
+
+        btn_rescan = QPushButton("Re-scan", status_row_widget)
+        btn_rescan.setFixedHeight(26)
+        btn_rescan.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_rescan.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 5px;
+                color: #FFFFFF;
+                padding: 0 8px;
+                font-size: 10.5px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 255, 255, 0.12);
+            }}
+        """)
+        btn_rescan.clicked.connect(lambda: _refresh_memreduct_status(force=True))
+
+        status_row_layout.addWidget(self.lbl_memreduct_status)
+        status_row_layout.addWidget(btn_rescan)
+
+        _add_hw_row(
+            memreduct_inner,
+            "Mem Reduct Status",
+            "Auto-detects Mem Reduct installation, registry, or running process",
+            status_row_widget
+        )
+
+        _add_hw_divider(memreduct_inner)
+
+        def _do_test_clean():
+            btn_test_clean.setText("Cleaning...")
+            btn_test_clean.setEnabled(False)
+            def _clean_done(success):
+                def _ui():
+                    btn_test_clean.setText("✓ Cleaned!" if success else "Failed")
+                    QTimer.singleShot(1800, lambda: (btn_test_clean.setText("🧹 Test Clean RAM"), btn_test_clean.setEnabled(True)))
+                QTimer.singleShot(0, _ui)
+            trigger_memreduct_clean(_clean_done)
+
+        btn_test_clean.clicked.connect(_do_test_clean)
+
+        btn_download = QPushButton("Download Mem Reduct", actions_widget)
+        btn_download.setFixedHeight(28)
+        btn_download.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_download.setToolTip("Open Henry++ Mem Reduct official repository in browser")
+        btn_download.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-weight: 600;
+                padding: 0 10px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 255, 255, 0.12);
+            }}
+        """)
+        btn_download.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/henrypp/memreduct")))
+
+        actions_layout.addWidget(btn_test_clean)
+        actions_layout.addWidget(btn_download)
+
+        _add_hw_row(
+            memreduct_inner,
+            "Memory Purge Action",
+            "Trigger memory reduction or visit project page",
+            actions_widget
+        )
+
+        _refresh_memreduct_status()
+
+        hw_content_layout.addWidget(memreduct_section)
+        hw_content_layout.addStretch()
+
+        hw_scroll.setWidget(hw_content)
+        page_hardware_layout.addWidget(hw_scroll)
+
+        self.stacked_widget.addWidget(page_hardware)
+        
+        # --- Page 8: Shortcuts Settings ---
         page_shortcuts = QWidget()
         page_shortcuts_layout = QVBoxLayout(page_shortcuts)
         page_shortcuts_layout.setContentsMargins(0, 0, 0, 0)
@@ -1596,7 +2144,7 @@ class SettingsWindow(QWidget):
         
         # Temporarily disable global hotkeys when entering the shortcuts page to prevent actions triggering
         if self.parent_window:
-            if index == 5:
+            if index == 7:
                 if hasattr(self.parent_window, 'unregister_global_hotkeys'):
                     self.parent_window.unregister_global_hotkeys()
             else:
@@ -1604,7 +2152,16 @@ class SettingsWindow(QWidget):
                     self.parent_window.register_global_hotkeys()
         
         # Update page header title
-        titles = ["General Settings", "Clock Style Customization", "Appearance", "Media Player", "AI Config", "Keyboard Shortcuts"]
+        titles = [
+            "General Settings",
+            "Clock Style Customization",
+            "Appearance",
+            "Media Player",
+            "AI Config",
+            "Weather Settings",
+            "Hardware Monitor",
+            "Keyboard Shortcuts"
+        ]
         self.lbl_page_title.setText(titles[index])
         
         # Update sidebar buttons style
@@ -2130,6 +2687,8 @@ class SettingsWindow(QWidget):
         config.save_ai_provider(provider)
         config.save_ai_api_key(key)
         config.save_ai_model(model)
+        if config.is_local_ai_provider(provider):
+            config.save_local_llm_url(provider, self.input_local_url.text())
         
         self.btn_save_ai.setText("Saved!")
         from PySide6.QtCore import QTimer
@@ -2169,51 +2728,97 @@ class SettingsWindow(QWidget):
         QTimer.singleShot(1500, lambda: self.btn_save_shortcuts.setText("Save Shortcuts"))
 
     def on_ai_provider_changed(self, provider_name):
-        provider_instructions = {
-            "Gemini": (
-                "https://aistudio.google.com/",
-                "Google AI Studio",
-                "Get API Key",
-                "Uses Gemini 1.5 Flash for rapid, intelligent answers."
-            ),
-            "OpenAI": (
-                "https://platform.openai.com/api-keys",
-                "OpenAI Platform",
-                "Create new secret key",
-                "Uses GPT-4o Mini for advanced reasoning and conversation."
-            ),
-            "Claude": (
-                "https://console.anthropic.com/",
-                "Anthropic Console",
-                "Get API Keys",
-                "Uses Claude 3.5 Sonnet for highly-detailed, smart responses."
-            ),
-            "Groq": (
-                "https://console.groq.com/keys",
-                "Groq Console",
-                "Create API Key",
-                "Available models:<br>"
-                "<b>Reasoning:</b> qwen-qwq-32b, qwen3-32b<br>"
-                "<b>Text-to-Text:</b> openai/gpt-oss-120b, llama-3.3-70b-versatile, llama-4-scout-17b-16e-instruct, meta-llama/llama-4-maverick-17b-128e-instruct"
-            ),
-            "OpenRouter": (
-                "https://openrouter.ai/keys",
-                "OpenRouter Keys",
-                "Create Key",
-                "Uses open-source models through OpenRouter's unified endpoint."
+        is_local = config.is_local_ai_provider(provider_name)
+
+        # Local servers need no key; cloud providers hide the server URL row.
+        self.lbl_ai_key_title.setVisible(not is_local)
+        self.input_ai_key.setVisible(not is_local)
+        self.lbl_local_server_title.setVisible(is_local)
+        self.input_local_url.setVisible(is_local)
+        self.btn_fetch_models.setVisible(is_local)
+        if is_local:
+            self.input_local_url.setText(config.load_local_llm_url(provider_name))
+
+        if is_local:
+            local_instructions = {
+                "Ollama": (
+                    "https://ollama.com/download",
+                    "Ollama",
+                    "Runs fully offline on your machine — no API key needed.<br>"
+                    "1. Install Ollama, then pull a model: <b>ollama pull llama3.2</b>.<br>"
+                    "2. Keep the Ollama app running (it serves on port 11434).<br>"
+                    "3. Use <b>Fetch Models</b> to pick a pulled model."
+                ),
+                "LM Studio": (
+                    "https://lmstudio.ai/",
+                    "LM Studio",
+                    "Runs fully offline on your machine — no API key needed.<br>"
+                    "1. Download a model in LM Studio.<br>"
+                    "2. Open the <b>Local Server</b> tab and start the server (port 1234).<br>"
+                    "3. Use <b>Fetch Models</b> to pick the loaded model."
+                ),
+                "Custom (OpenAI-compatible)": (
+                    "https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md",
+                    "any OpenAI-compatible server",
+                    "Point Ticky at any server exposing <b>/v1/chat/completions</b> "
+                    "(llama.cpp, vLLM, Jan, LocalAI, ...).<br>"
+                    "Set the server URL below and enter the model name it expects."
+                ),
+            }
+            link_url, site_name, description = local_instructions.get(
+                provider_name, local_instructions["Ollama"])
+            self.lbl_ai_guide.setText(
+                f"<b>Setup Instructions for {provider_name}:</b><br>"
+                f"Visit <a href='{link_url}' style='color:#FF9F0A;'>{site_name}</a> for details.<br>"
+                f"{description}"
             )
-        }
-        
-        inst = provider_instructions.get(provider_name, provider_instructions["Gemini"])
-        link_url, site_name, action_name, description = inst
-        
-        self.lbl_ai_guide.setText(
-            f"<b>Setup Instructions for {provider_name}:</b><br>"
-            f"1. Visit <a href='{link_url}' style='color:#FF9F0A;'>{site_name}</a> and sign in.<br>"
-            f"2. Click <b>{action_name}</b> and create a new key.<br>"
-            f"3. Paste the API Key below.<br>"
-            f"{description}"
-        )
+        else:
+            provider_instructions = {
+                "Gemini": (
+                    "https://aistudio.google.com/",
+                    "Google AI Studio",
+                    "Get API Key",
+                    "Uses Gemini 1.5 Flash for rapid, intelligent answers."
+                ),
+                "OpenAI": (
+                    "https://platform.openai.com/api-keys",
+                    "OpenAI Platform",
+                    "Create new secret key",
+                    "Uses GPT-4o Mini for advanced reasoning and conversation."
+                ),
+                "Claude": (
+                    "https://console.anthropic.com/",
+                    "Anthropic Console",
+                    "Get API Keys",
+                    "Uses Claude 3.5 Sonnet for highly-detailed, smart responses."
+                ),
+                "Groq": (
+                    "https://console.groq.com/keys",
+                    "Groq Console",
+                    "Create API Key",
+                    "Available models:<br>"
+                    "<b>Reasoning:</b> qwen-qwq-32b, qwen3-32b<br>"
+                    "<b>Text-to-Text:</b> openai/gpt-oss-120b, llama-3.3-70b-versatile, llama-4-scout-17b-16e-instruct, meta-llama/llama-4-maverick-17b-128e-instruct"
+                ),
+                "OpenRouter": (
+                    "https://openrouter.ai/keys",
+                    "OpenRouter Keys",
+                    "Create Key",
+                    "Uses open-source models through OpenRouter's unified endpoint."
+                )
+            }
+
+            inst = provider_instructions.get(provider_name, provider_instructions["Gemini"])
+            link_url, site_name, action_name, description = inst
+
+            self.lbl_ai_guide.setText(
+                f"<b>Setup Instructions for {provider_name}:</b><br>"
+                f"1. Visit <a href='{link_url}' style='color:#FF9F0A;'>{site_name}</a> and sign in.<br>"
+                f"2. Click <b>{action_name}</b> and create a new key.<br>"
+                f"3. Paste the API Key below.<br>"
+                f"{description}"
+            )
+        self.lbl_ai_guide.updateGeometry()
         
         # Load saved model or set default for this provider
         saved_provider = config.load_ai_provider()
@@ -2225,9 +2830,36 @@ class SettingsWindow(QWidget):
                 "OpenAI": "gpt-4o-mini",
                 "Claude": "claude-3-5-sonnet-20241022",
                 "Groq": "openai/gpt-oss-120b",
-                "OpenRouter": "meta-llama/llama-3-8b-instruct:free"
+                "OpenRouter": "meta-llama/llama-3-8b-instruct:free",
+                "Ollama": "llama3.2",
+                "LM Studio": "",
+                "Custom (OpenAI-compatible)": ""
             }
             self.input_ai_model.setText(defaults.get(provider_name, "gemini-1.5-flash"))
+
+    def fetch_local_models_clicked(self):
+        from PySide6.QtWidgets import QMessageBox
+        from widgets.ai_panel import fetch_local_models
+        provider = self.combo_provider.currentText()
+        url = self.input_local_url.text().strip() or config.load_local_llm_url(provider)
+        self.btn_fetch_models.setEnabled(False)
+        self.btn_fetch_models.setText("Fetching...")
+        try:
+            # Blocking GET with a 5s timeout; the settings page stays simple.
+            models, error = fetch_local_models(provider, url)
+        finally:
+            self.btn_fetch_models.setEnabled(True)
+            self.btn_fetch_models.setText("Fetch Models")
+        if error:
+            QMessageBox.warning(self, "Fetch Models", error)
+            return
+        if len(models) == 1:
+            self.input_ai_model.setText(models[0])
+            return
+        from PySide6.QtWidgets import QInputDialog
+        model, ok = QInputDialog.getItem(self, "Select Model", "Models available on the server:", models, 0, False)
+        if ok and model:
+            self.input_ai_model.setText(model)
 
     def update_spotify_status_ui(self):
         c_id, c_secret = config.load_spotify_credentials()

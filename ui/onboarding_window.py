@@ -24,7 +24,7 @@ ONBOARDING_VERSION = 1
 INTRO_SIZE = QSize(720, 440)
 MAIN_SIZE = QSize(940, 620)
 
-AI_PROVIDERS = ["Gemini", "OpenAI", "Claude", "Groq", "OpenRouter"]
+AI_PROVIDERS = ["Gemini", "OpenAI", "Claude", "Groq", "OpenRouter", "Ollama", "LM Studio", "Custom (OpenAI-compatible)"]
 
 
 def _asset_path(filename):
@@ -369,7 +369,7 @@ class OnboardingWindow(QWidget):
         heading = QLabel("Bring in an AI", page)
         heading.setObjectName("OnbHeading")
         intro = QLabel(
-            "The AI panel in the notch uses a key you bring — nothing is shared or sold. "
+            "The AI panel in the notch uses a key you bring or a local model server — nothing is shared or sold. "
             "Skip this now and add it later from Settings whenever you like.",
             page,
         )
@@ -568,6 +568,12 @@ class OnboardingWindow(QWidget):
 
     def _refresh_ai_hint(self, provider):
         if not hasattr(self, "lbl_ai_hint"):
+            return
+        if config.is_local_ai_provider(provider):
+            self.lbl_ai_hint.setText(
+                f"{provider} runs on your own machine — no API key needed. Keep the server running, "
+                "then set its URL and pick a model in Settings -> AI Config."
+            )
             return
         default_model = {
             "Gemini": "gemini-1.5-flash",

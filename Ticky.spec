@@ -46,7 +46,7 @@ winrt_hiddenimports = [
     'winrt.windows.media'
 ] if is_win else []
 
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
+from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files, collect_submodules
 
 # faster-whisper runs on ctranslate2, whose native DLLs (and OpenMP runtime) are
 # loaded at import time from inside the package directory.
@@ -76,7 +76,7 @@ a = Analysis(
     pathex=[],
     binaries=native_binaries,
     datas=asset_datas,
-    hiddenimports=winrt_hiddenimports,
+    hiddenimports=winrt_hiddenimports + collect_submodules('holidays') + ['psutil', 'requests'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

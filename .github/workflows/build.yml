@@ -99,3 +99,18 @@ jobs:
             --title "Ticky Latest Build" \
             --notes "Automated continuous delivery build of the latest commit on main branch. Windows 10/11 x64: run Ticky-Setup, no Python needed." \
             --target ${{ github.sha }}
+
+          # Also create/update versioned release (e.g. v1.3.3) for release history
+          version_exe=$(ls dist/Ticky-Setup-*.exe | grep -v 'dist/Ticky-Setup.exe' | head -n1)
+          if [ -n "$version_exe" ]; then
+            ver=$(basename "$version_exe" | sed -E 's/Ticky-Setup-([0-9]+\.[0-9]+\.[0-9]+)\.exe/\1/')
+            tag="v$ver"
+            echo "Creating version release $tag"
+            gh release delete "$tag" --yes || true
+            git push origin ":refs/tags/$tag" || true
+            git tag -d "$tag" || true
+            gh release create "$tag" dist/* \
+              --title "Ticky $tag" \
+              --notes "Ticky $tag release. Windows 10/11 x64: run Ticky-Setup-$ver.exe, no Python needed." \
+              --target ${{ github.sha }} || true
+          fi

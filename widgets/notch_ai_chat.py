@@ -57,6 +57,9 @@ class VoiceTranscribeWorker(QThread):
         self.api_key = (api_key or "").strip()
 
     def run(self):
+        if config.is_local_ai_provider(self.provider):
+            self.finished.emit(False, "Voice input needs a cloud provider (Groq, OpenAI or Gemini). Local LLM servers don't offer transcription — type your message instead.")
+            return
         if not os.path.exists(self.audio_file_path) or os.path.getsize(self.audio_file_path) == 0:
             self.finished.emit(False, "Audio recording is empty or not found.")
             return
@@ -142,6 +145,7 @@ try {{
                 proc = subprocess.Popen(
                     ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    encoding="utf-8", errors="replace",
                     startupinfo=startupinfo, creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 out, _ = proc.communicate(timeout=6)
@@ -1015,6 +1019,8 @@ class NotchMiniAIChat(QWidget):
                 self.add_bubble("⚠️ API Key needed for voice transcription.\nPlease configure in Settings -> AI Chat tab.",
                                 is_user=False,
                                 action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}])
+            elif config.is_local_ai_provider(config.load_ai_provider()):
+                self.add_bubble(f"⚠️ {text}", is_user=False)
             else:
                 self.input_field.setPlaceholderText("Could not detect speech. Try again.")
 
@@ -1042,23 +1048,24 @@ class NotchMiniAIChat(QWidget):
         model = config.load_ai_model()
         api_key = config.load_ai_api_key()
 
-        if not api_key:
-            self.add_bubble(
-                "⚠️ **API Key not set!**\nPlease save your API key in Settings -> AI Chat tab to use Ticky AI.",
-                is_user=False,
-                action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}]
-            )
-            return
+        if not config.is_local_ai_provider(provider):
+            if not api_key:
+                self.add_bubble(
+                    "⚠️ **API Key not set!**\nPlease save your API key in Settings -> AI Chat tab to use Ticky AI.",
+                    is_user=False,
+                    action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}]
+                )
+                return
 
-        # Validate mismatch
-        if api_key.startswith("gsk_") and provider.lower() != "groq":
-            self.add_bubble(f"⚠️ **API Key Mismatch!** Your key starts with `gsk_` (Groq), but the selected provider is `{provider}`. Please switch to Groq in Settings.",
-                            is_user=False, action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}])
-            return
-        elif api_key.startswith("AIzaSy") and provider.lower() != "gemini":
-            self.add_bubble(f"⚠️ **API Key Mismatch!** Your key starts with `AIzaSy` (Gemini), but provider is `{provider}`.",
-                            is_user=False, action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}])
-            return
+            # Validate mismatch
+            if api_key.startswith("gsk_") and provider.lower() != "groq":
+                self.add_bubble(f"⚠️ **API Key Mismatch!** Your key starts with `gsk_` (Groq), but the selected provider is `{provider}`. Please switch to Groq in Settings.",
+                                is_user=False, action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}])
+                return
+            elif api_key.startswith("AIzaSy") and provider.lower() != "gemini":
+                self.add_bubble(f"⚠️ **API Key Mismatch!** Your key starts with `AIzaSy` (Gemini), but provider is `{provider}`.",
+                                is_user=False, action_buttons=[{"label": "⚙️ Open Settings", "callback": self.open_settings}])
+                return
 
         # Add thinking bubble and alert notch eyes
         self.thinking_bubble = NotchChatBubble("💭 *Thinking...*", is_user=False, parent=self.chat_content, parent_scroll=self.scroll)
