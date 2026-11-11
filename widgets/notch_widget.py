@@ -170,10 +170,10 @@ class NotchWidget(QWidget):
         self.main_window = main_window
 
         # Geometry dimensions
-        self.idle_w = 160
+        self.idle_w = 120
         self.idle_h = 32
         self.hover_w = 440
-        self.hover_h = 60
+        self.hover_h = 68
 
         # State 2 Multi-page navigation (0: Normal Tasks/Time, 1: Weather, 2: System Stats)
         self.notch_page = 0
@@ -2375,7 +2375,7 @@ class NotchWidget(QWidget):
             else:
                 time_w = float(self.time_box_rect.width()) if (hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.width() > 0) else 75.0
                 title_x = int(margin_x + time_w + 10)
-            top_cy = 27.0 if self.height() >= 54.0 else (self.height() / 2.0)
+            top_cy = 30.0 if self.height() >= 54.0 else (self.height() / 2.0)
             title_y = int(top_cy - 18.0)
             title_w = max(100, int(self.width() - title_x - margin_x))
             title_h = 36
@@ -3451,7 +3451,7 @@ class NotchWidget(QWidget):
             h = HARDWARE_NOTCH_HEIGHT if show_top else HARDWARE_NOTCH_COMPACT_HEIGHT
             return HARDWARE_NOTCH_WIDTH, h
         else:
-            return max(380, self.calc_expanded_width()), 60
+            return max(380, self.calc_expanded_width()), 68
 
     def set_notch_page(self, page: int):
         """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
@@ -5283,8 +5283,8 @@ class NotchWidget(QWidget):
         if h is None:
             h = float(self.height())
 
-        # Scale curve radiuses smoothly with height based on base State 2 height (60px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, 60.0 - float(self.idle_h))))
+        # Scale curve radiuses smoothly with height based on base State 2 height (68px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 68.0)) - float(self.idle_h))))
         ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
         corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
 
@@ -5332,8 +5332,8 @@ class NotchWidget(QWidget):
         if hasattr(self, "sub_pill") and self.sub_pill and self.sub_pill.isVisible():
             self.sub_pill.recenter_under_notch()
 
-        # Scale curve radiuses smoothly with height based on base State 2 height (60px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, 60.0 - float(self.idle_h))))
+        # Scale curve radiuses smoothly with height based on base State 2 height (68px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 68.0)) - float(self.idle_h))))
 
         # Construct notch silhouette path (pill in Dynamic Island mode, attached notch with ears in Top Notch mode)
         path = self.get_notch_silhouette_path(w, h)
@@ -5812,7 +5812,7 @@ class NotchWidget(QWidget):
         # A media row beside the timer is taller, so that row centres on the notch height
         media_shares_row = self.media_timer_combined()
         if h >= 54.0 and not media_shares_row:
-            top_cy = 30.0 if h >= 75.0 else 26.0
+            top_cy = 32.0 if h >= 75.0 else 30.0
         else:
             top_cy = h / 2.0
 

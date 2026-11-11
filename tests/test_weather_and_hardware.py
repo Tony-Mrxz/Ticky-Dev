@@ -227,7 +227,7 @@ def test_notch_state2_pages_and_dots(notch_instance):
     notch = notch_instance
     notch.show()
     assert notch.notch_page == 0
-    assert notch.hover_h == 60
+    assert notch.hover_h == 68
     assert notch.weather_widget.isHidden()
     assert notch.hardware_widget.isHidden()
 
@@ -263,7 +263,7 @@ def test_notch_state2_pages_and_dots(notch_instance):
     # Switch back to Page 0: Tasks / Time (smooth return to 60px height)
     notch.set_notch_page(0)
     assert notch.notch_page == 0
-    assert notch.hover_h == 60
+    assert notch.hover_h == 68
     assert notch.weather_widget.isHidden()
     assert notch.hardware_widget.isHidden()
 
