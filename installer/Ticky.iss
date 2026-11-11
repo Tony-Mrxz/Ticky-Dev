@@ -9,7 +9,7 @@
 
 #define MyAppName "Ticky"
 #ifndef AppVersion
-  #define AppVersion "1.3.3"
+  #define AppVersion "1.3.4"
 #endif
 #ifndef BundleDir
   #define BundleDir "..\dist\Ticky"

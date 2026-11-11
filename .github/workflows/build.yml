@@ -100,7 +100,7 @@ jobs:
             --notes "Automated continuous delivery build of the latest commit on main branch. Windows 10/11 x64: run Ticky-Setup, no Python needed." \
             --target ${{ github.sha }}
 
-          # Also create/update versioned release (e.g. v1.3.3) for release history
+          # Also create/update versioned release (e.g. v1.3.4) for release history
           version_exe=$(ls dist/Ticky-Setup-*.exe | grep -v 'dist/Ticky-Setup.exe' | head -n1)
           if [ -n "$version_exe" ]; then
             ver=$(basename "$version_exe" | sed -E 's/Ticky-Setup-([0-9]+\.[0-9]+\.[0-9]+)\.exe/\1/')

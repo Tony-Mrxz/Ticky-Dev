@@ -172,8 +172,8 @@ class NotchWidget(QWidget):
         # Geometry dimensions
         self.idle_w = 120
         self.idle_h = 32
-        self.hover_w = 340
-        self.hover_h = 68
+        self.hover_w = 320
+        self.hover_h = 64
 
         # State 2 Multi-page navigation (0: Normal Tasks/Time, 1: Weather, 2: System Stats)
         self.notch_page = 0
@@ -632,6 +632,125 @@ class NotchWidget(QWidget):
         self.idle_cycle_timer.timeout.connect(self.trigger_random_idle_behavior)
         self.idle_cycle_timer.start()
 
+        # Idle Translucency State (fades to translucent after timeout without notch interaction)
+        self.TRANSLUCENT_IDLE_TIMEOUT = float(config.load_idle_translucent_timeout(60))
+        self.TRANSLUCENT_TARGET_OPACITY = 0.25
+        self._idle_translucent_opacity = 1.0
+        self.is_translucent = False
+        self.last_notch_interaction_time = time.time()
+        self._was_translucent_before_peek = False
+
+        self.translucent_check_timer = QTimer(self)
+        self.translucent_check_timer.setInterval(1000)
+        self.translucent_check_timer.timeout.connect(self._check_idle_translucency)
+        self.translucent_check_timer.start()
+
+    @Property(float)
+    def idle_translucent_opacity(self):
+        return self._idle_translucent_opacity
+
+    @idle_translucent_opacity.setter
+    def idle_translucent_opacity(self, val):
+        self._idle_translucent_opacity = max(0.0, min(1.0, float(val)))
+        self.update()
+
+    def is_notch_in_ground_state(self) -> bool:
+        """True if notch is collapsed in State 1 idle ground state (not hovered, no peek, no modal mode)."""
+        if self._is_hovered:
+            return False
+        if getattr(self, "time_peek_active", False) or getattr(self, "task_peek_active", False) or getattr(self, "task_collapsing", False):
+            return False
+        if getattr(self, "is_creating_task", False) or getattr(self, "is_creating_note", False) or getattr(self, "notes_in_notch", False) or getattr(self, "tasks_in_notch", False):
+            return False
+        if getattr(self, "timer_in_notch", False) or getattr(self, "timer_is_running", False) or getattr(self, "media_in_notch", False) or getattr(self, "ai_chat_in_notch", False):
+            return False
+        if getattr(self, "dictation_in_notch", False) or getattr(self, "app_search_in_notch", False) or getattr(self, "calendar_in_notch", False):
+            return False
+        if getattr(self, "weather_in_notch", False) or getattr(self, "hardware_in_notch", False) or getattr(self, "reminders_in_notch", False):
+            return False
+        if getattr(self, "is_creating_reminder", False) or getattr(self, "active_reminder_alert", None) is not None or getattr(self, "active_update_alert", None) is not None:
+            return False
+        if self.height() > 44:
+            return False
+        return True
+
+    def set_idle_translucent_timeout(self, timeout_secs: int):
+        """Update inactivity fade timeout (in seconds). 0 disables the feature."""
+        config.save_idle_translucent_timeout(timeout_secs)
+        self.TRANSLUCENT_IDLE_TIMEOUT = float(timeout_secs)
+        if timeout_secs <= 0 and getattr(self, "is_translucent", False):
+            self.wake_to_opaque(duration=200)
+
+    def _check_idle_translucency(self):
+        """Called every second by translucent_check_timer to enter translucent mode after timeout without notch interaction."""
+        timeout = float(getattr(self, "TRANSLUCENT_IDLE_TIMEOUT", 60.0))
+        if timeout <= 0:
+            if getattr(self, "is_translucent", False):
+                self.wake_to_opaque(duration=200)
+            return
+
+        now = time.time()
+        if not self.is_notch_in_ground_state():
+            if self._is_hovered:
+                self.last_notch_interaction_time = now
+            return
+
+        if self.is_translucent:
+            return
+
+        idle_duration = now - getattr(self, "last_notch_interaction_time", now)
+        if idle_duration >= timeout:
+            self.fade_to_translucent()
+
+    def fade_to_translucent(self, duration=1000):
+        """Smoothly transitions notch to translucent/transparent idle state."""
+        if self._is_hovered:
+            return
+        if getattr(self, "is_creating_task", False) or getattr(self, "is_creating_note", False) or getattr(self, "notes_in_notch", False) or getattr(self, "tasks_in_notch", False):
+            return
+        if getattr(self, "timer_in_notch", False) or getattr(self, "timer_is_running", False) or getattr(self, "media_in_notch", False) or getattr(self, "ai_chat_in_notch", False):
+            return
+        if getattr(self, "dictation_in_notch", False) or getattr(self, "app_search_in_notch", False) or getattr(self, "calendar_in_notch", False):
+            return
+        if getattr(self, "weather_in_notch", False) or getattr(self, "hardware_in_notch", False) or getattr(self, "reminders_in_notch", False):
+            return
+        if getattr(self, "is_creating_reminder", False) or getattr(self, "active_reminder_alert", None) is not None or getattr(self, "active_update_alert", None) is not None:
+            return
+
+        self.is_translucent = True
+        if hasattr(self, "translucent_anim") and self.translucent_anim.state() == QPropertyAnimation.State.Running:
+            self.translucent_anim.stop()
+        if duration <= 0:
+            self._idle_translucent_opacity = self.TRANSLUCENT_TARGET_OPACITY
+            self.update()
+            return
+        self.translucent_anim = QPropertyAnimation(self, b"idle_translucent_opacity", self)
+        self.translucent_anim.setDuration(duration)
+        self.translucent_anim.setStartValue(self._idle_translucent_opacity)
+        self.translucent_anim.setEndValue(self.TRANSLUCENT_TARGET_OPACITY)
+        self.translucent_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self.translucent_anim.start()
+
+    def wake_to_opaque(self, duration=220):
+        """Smoothly transitions notch back to 100% full opacity."""
+        self.is_translucent = False
+        if hasattr(self, "translucent_anim") and self.translucent_anim.state() == QPropertyAnimation.State.Running:
+            self.translucent_anim.stop()
+        if self._idle_translucent_opacity >= 0.999:
+            self._idle_translucent_opacity = 1.0
+            self.update()
+            return
+        if duration <= 0:
+            self._idle_translucent_opacity = 1.0
+            self.update()
+            return
+        self.translucent_anim = QPropertyAnimation(self, b"idle_translucent_opacity", self)
+        self.translucent_anim.setDuration(duration)
+        self.translucent_anim.setStartValue(self._idle_translucent_opacity)
+        self.translucent_anim.setEndValue(1.0)
+        self.translucent_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.translucent_anim.start()
+
     @Property(float)
     def add_expand_progress(self):
         return self._add_expand_progress
@@ -819,6 +938,7 @@ class NotchWidget(QWidget):
 
         if notch_contains or sub_pill_contains:
             self._cursor_outside_start_time = None
+            self.last_notch_interaction_time = now
         else:
             if self._cursor_outside_start_time is None:
                 self._cursor_outside_start_time = now
@@ -1438,15 +1558,15 @@ class NotchWidget(QWidget):
 
         show_box = theme.CLOCK_BOX_BG
         time_content_w = max(w_time, w_date)
-        return (time_content_w + 20.0) if show_box else time_content_w
+        return (time_content_w + 16.0) if show_box else time_content_w
 
     def calc_notch_timer_width(self):
         """Calculate dynamic width for notch when timer is displayed."""
         show_time = ((not self.timer_is_running) or self.timer_time_peek_active) and not getattr(self, "is_creating_reminder", False)
         time_box_w = self.calc_time_box_width() if show_time else 0.0
 
-        gap_elements = 12.0
-        margin_x = 22.0
+        gap_elements = 10.0
+        margin_x = 15.0
 
         font_family = config.load_font_family("DM Sans")
         font_time, _ = self.make_clock_fonts(10, 8)
@@ -1468,13 +1588,13 @@ class NotchWidget(QWidget):
             cb_gap = 10.0
             play_size = 20.0
             restart_size = 18.0
-            card_pad_h = 14.0
-            card_w = card_pad_h + cb_size + cb_gap + w_task_text + 10.0 + w_timer_text + 8.0 + restart_size + 8.0 + play_size + card_pad_h
+            card_pad_h = 11.0
+            card_w = card_pad_h + cb_size + cb_gap + w_task_text + 8.0 + w_timer_text + 6.0 + restart_size + 6.0 + play_size + card_pad_h
         else:
             play_size = 20.0
             restart_size = 18.0
-            card_pad_h = 14.0
-            card_w = 12.0 + play_size + 8.0 + restart_size + 10.0 + w_timer_text + card_pad_h
+            card_pad_h = 11.0
+            card_w = card_pad_h + play_size + 6.0 + restart_size + 8.0 + w_timer_text + card_pad_h
 
         capsule_w = 184.0
         add_btn_size = 28.0
@@ -1488,9 +1608,9 @@ class NotchWidget(QWidget):
         if self.is_creating_note:
             return int(max(480, total_w + 50))
 
-        min_w = 390 if self.add_expanded else 240
+        min_w = 330 if self.add_expanded else 160
         if getattr(self, "media_in_notch", False):
-            # [22] timer row [16] media block [20] — mirrors the combined row painting
+            # [15] timer row [16] media block [20] — mirrors the combined row painting
             return int(total_content_w + margin_x + self.MEDIA_TIMER_GAP + self.media_block_width() + self.MEDIA_EDGE_MARGIN)
         return int(max(min_w, total_w))
 
@@ -1528,11 +1648,11 @@ class NotchWidget(QWidget):
 
         show_box = theme.CLOCK_BOX_BG
         time_content_w = max(w_time, w_date)
-        time_box_w = (time_content_w + 20.0) if show_box else time_content_w
+        time_box_w = (time_content_w + 16.0) if show_box else time_content_w
 
         add_btn_size = 28.0
-        margin_x = 20.0
-        gap_elements = 12.0
+        margin_x = 15.0
+        gap_elements = 10.0
 
         if self.current_random_task:
             fm_task = QFontMetrics(font_task)
@@ -1545,16 +1665,16 @@ class NotchWidget(QWidget):
             cb_gap = 10.0
             play_size = 20.0
             play_gap = 10.0
-            card_pad_h = 14.0
+            card_pad_h = 11.0
 
             task_card_w = card_pad_h + cb_size + cb_gap + w_task_text + play_gap + play_size + card_pad_h
             total_content_w = time_box_w + gap_elements + task_card_w + gap_elements + add_btn_size
             target_w = int(total_content_w + (margin_x * 2.0))
-            return max(220, target_w)
+            return max(200, target_w)
         else:
             total_content_w = time_box_w + gap_elements + add_btn_size
             target_w = int(total_content_w + (margin_x * 2.0))
-            return max(180, target_w)
+            return max(160, target_w)
 
     def _on_reminder_title_return(self):
         if hasattr(self, "reminder_widget") and self.reminder_widget and hasattr(self.reminder_widget, "creator"):
@@ -1590,15 +1710,15 @@ class NotchWidget(QWidget):
 
         show_box = theme.CLOCK_BOX_BG
         time_content_w = max(w_time, w_date)
-        time_box_w = (time_content_w + 20.0) if show_box else time_content_w
+        time_box_w = (time_content_w + 16.0) if show_box else time_content_w
 
         capsule_w = 184.0
-        gap_elements = 14.0
-        margin_x = 20.0
+        gap_elements = 12.0
+        margin_x = 15.0
 
         total_content_w = time_box_w + gap_elements + capsule_w
         target_w = int(total_content_w + (margin_x * 2.0))
-        return max(300, target_w)
+        return max(280, target_w)
 
     def update_task_input_geometry(self):
         margin_x = 22
@@ -2074,7 +2194,7 @@ class NotchWidget(QWidget):
         if notch_contains or sub_pill_contains:
             self._is_hovered = True
             target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-            self.animate_to(target_w, self.hover_h)
+            self.animate_to(target_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
             self.update()
         else:
             self._is_hovered = False
@@ -2310,7 +2430,7 @@ class NotchWidget(QWidget):
         if notch_contains or sub_pill_contains:
             self._is_hovered = True
             target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-            self.animate_to(target_w, self.hover_h)
+            self.animate_to(target_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
             self.update()
         else:
             self._is_hovered = False
@@ -2375,7 +2495,7 @@ class NotchWidget(QWidget):
             else:
                 time_w = float(self.time_box_rect.width()) if (hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.width() > 0) else 75.0
                 title_x = int(margin_x + time_w + 10)
-            top_cy = 30.0 if self.height() >= 54.0 else (self.height() / 2.0)
+            top_cy = 28.0 if self.height() >= 54.0 else (self.height() / 2.0)
             title_y = int(top_cy - 18.0)
             title_w = max(100, int(self.width() - title_x - margin_x))
             title_h = 36
@@ -2437,7 +2557,7 @@ class NotchWidget(QWidget):
             self.timer_stopped_collapse_timer.stop()
         self.empty_reminders_showing = False
         self.cancel_idle_animations()
-
+        self.wake_to_opaque(duration=150)
         self.active_reminder_alert = reminder_data
         self._is_hovered = True
 
@@ -2654,11 +2774,14 @@ class NotchWidget(QWidget):
     MEDIA_STANDALONE_W = 300.0
     MEDIA_STANDALONE_H = 78.0
     MEDIA_TIMER_GAP = 16.0
+    TIMER_NOTCH_HEIGHT = 50
 
     def expanded_row_height(self):
-        """Height of the expanded row — the album art block needs the taller media stage."""
+        """Height of the expanded row — the album art block needs the taller media stage, while timer uses compact height."""
         if getattr(self, "media_in_notch", False):
             return int(self.MEDIA_STANDALONE_H)
+        if getattr(self, "timer_in_notch", False):
+            return int(self.TIMER_NOTCH_HEIGHT)
         return self.hover_h
 
     def media_block_width(self):
@@ -3220,7 +3343,7 @@ class NotchWidget(QWidget):
             # Don't force-kill a running timer; just leave dictation UI
             if self.timer_is_running:
                 self._is_hovered = False
-                self.animate_to(self.calc_notch_timer_width() if hasattr(self, "calc_notch_timer_width") else self.hover_w, self.hover_h)
+                self.animate_to(self.calc_notch_timer_width() if hasattr(self, "calc_notch_timer_width") else self.hover_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
                 self.update()
             else:
                 self.collapse_to_idle(force=True)
@@ -3452,7 +3575,7 @@ class NotchWidget(QWidget):
             return HARDWARE_NOTCH_WIDTH, h
         else:
             expanded_w = self.calc_add_expanded_width() if getattr(self, "add_expanded", False) else self.calc_expanded_width()
-            return expanded_w, 68
+            return expanded_w, 64
 
     def set_notch_page(self, page: int):
         """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
@@ -3903,16 +4026,37 @@ class NotchWidget(QWidget):
 
         self.idle_cycle_timer.setInterval(random.randint(4500, 7000))
 
+    def calc_time_peek_width(self) -> int:
+        """Calculates compact dynamic width for the idle time and date peek."""
+        font_time, font_date = self.make_clock_fonts(11.0, 8.5)
+        now = QDateTime.currentDateTime()
+        use_24h = config.load_use_24h(True)
+        show_sec = config.load_show_seconds(False)
+        time_str = self.clock_time_string(now, use_24h, show_sec)
+        spec = self.clock_style_spec()
+        date_str = self.clock_date_string(now, spec)
+        fm_t = QFontMetrics(font_time)
+        fm_d = QFontMetrics(font_date)
+        max_t_w = max(float(fm_t.horizontalAdvance(time_str)), float(fm_d.horizontalAdvance(date_str)))
+        # Text width + end caps + comfortable padding (~40px total margin)
+        target_w = int(max_t_w + 44.0)
+        return max(self.idle_w, target_w)
+
     def start_time_peek(self):
-        """Eyes scroll down, time & date roll in, notch slightly enlarges (200x38), stays for ~3.8s, then rolls back."""
+        """Eyes scroll down, time & date roll in, notch slightly enlarges, stays for ~3.8s, then rolls back."""
         if self._is_hovered or self.is_typing or self.time_peek_active or self.task_peek_active:
             return
         if self.expression_active:
             self.expression_restore_timer.stop()
             self.reset_expression()
+        was_trans = getattr(self, "is_translucent", False) or (getattr(self, "_idle_translucent_opacity", 1.0) < 0.99)
+        self._was_translucent_before_peek = was_trans
+        if was_trans:
+            self.wake_to_opaque(duration=250)
         self.time_peek_active = True
         self.target_eyes_scroll_y = 32.0  # Eyes scroll down and exit bottom
-        self.animate_to(200, 38, duration=280, easing=QEasingCurve.Type.OutQuad)
+        peek_w = self.calc_time_peek_width()
+        self.animate_to(peek_w, 36, duration=280, easing=QEasingCurve.Type.OutQuad)
         self.time_peek_restore_timer.start(3800)
 
     def end_time_peek(self):
@@ -3923,6 +4067,9 @@ class NotchWidget(QWidget):
         self.target_eyes_scroll_y = 0.0
         if not self._is_hovered and not self.is_creating_task:
             self.animate_to(self.idle_w, self.idle_h, duration=260, easing=QEasingCurve.Type.OutQuad)
+            if getattr(self, "_was_translucent_before_peek", False):
+                self._was_translucent_before_peek = False
+                self.fade_to_translucent(duration=1000)
 
     def trigger_random_expression(self):
         """
@@ -4033,6 +4180,11 @@ class NotchWidget(QWidget):
             self.expression_restore_timer.stop()
             self.reset_expression()
 
+        was_trans = getattr(self, "is_translucent", False) or (getattr(self, "_idle_translucent_opacity", 1.0) < 0.99)
+        self._was_translucent_before_peek = was_trans
+        if was_trans:
+            self.wake_to_opaque(duration=250)
+
         self.task_peek_active = True
         self.task_collapsing = False
         self.task_peek_title = task_title
@@ -4126,6 +4278,10 @@ class NotchWidget(QWidget):
         if self.anim:
             self.anim.finished.connect(on_collapse_done)
         QTimer.singleShot(280, on_collapse_done)
+
+        if getattr(self, "_was_translucent_before_peek", False) and not self._is_hovered:
+            self._was_translucent_before_peek = False
+            self.fade_to_translucent(duration=1000)
 
     def cancel_idle_animations(self):
         """Immediately and cleanly interrupts any active idle animation."""
@@ -4287,6 +4443,9 @@ class NotchWidget(QWidget):
 
     def enterEvent(self, event):
         self._is_hovered = True
+        self.last_notch_interaction_time = time.time()
+        self._was_translucent_before_peek = False
+        self.wake_to_opaque(duration=200)
         self.unhover_collapse_timer.stop()
         if hasattr(self, "empty_notes_restore_timer") and not getattr(self, "empty_notes_showing", False):
             self.empty_notes_restore_timer.stop()
@@ -4357,6 +4516,7 @@ class NotchWidget(QWidget):
             super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self.last_notch_interaction_time = time.time()
         self.hover_time_box = False
         if getattr(self, "active_update_alert", None) is not None:
             self.hover_update_now = False
@@ -5030,6 +5190,8 @@ class NotchWidget(QWidget):
         self.ensure_stays_on_top()
 
     def mousePressEvent(self, event):
+        self.last_notch_interaction_time = time.time()
+        self.wake_to_opaque(duration=150)
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
 
@@ -5284,8 +5446,8 @@ class NotchWidget(QWidget):
         if h is None:
             h = float(self.height())
 
-        # Scale curve radiuses smoothly with height based on base State 2 height (68px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 68.0)) - float(self.idle_h))))
+        # Scale curve radiuses smoothly with height based on base State 2 height (64px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 64.0)) - float(self.idle_h))))
         ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
         corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
 
@@ -5327,14 +5489,18 @@ class NotchWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
+        trans_alpha = getattr(self, "_idle_translucent_opacity", 1.0)
+        if trans_alpha < 0.999:
+            painter.setOpacity(trans_alpha)
+
         w = float(self.width())
         h = float(self.height())
 
         if hasattr(self, "sub_pill") and self.sub_pill and self.sub_pill.isVisible():
             self.sub_pill.recenter_under_notch()
 
-        # Scale curve radiuses smoothly with height based on base State 2 height (68px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 68.0)) - float(self.idle_h))))
+        # Scale curve radiuses smoothly with height based on base State 2 height (64px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 64.0)) - float(self.idle_h))))
 
         # Construct notch silhouette path (pill in Dynamic Island mode, attached notch with ears in Top Notch mode)
         path = self.get_notch_silhouette_path(w, h)
@@ -5343,9 +5509,12 @@ class NotchWidget(QWidget):
         notch_bg = QColor(theme.BG_COLOR)
         notch_border = QColor(theme.BORDER_COLOR)
         if not notch_border.isValid():
-            notch_border = QColor(255, 255, 255, 24)
-        elif notch_border.alpha() < 30:
-            notch_border.setAlpha(36)
+            notch_border = QColor(255, 255, 255, 75)
+        elif notch_bg.lightness() < 128:
+            # Enhanced border visibility so the notch silhouette is cleanly defined on dark backgrounds
+            notch_border.setAlpha(max(75, notch_border.alpha()))
+        else:
+            notch_border.setAlpha(max(45, notch_border.alpha()))
 
         painter.setBrush(QBrush(notch_bg))
         painter.setPen(QPen(notch_border, 1.0))
@@ -5618,9 +5787,9 @@ class NotchWidget(QWidget):
             self.page_dot_rects = []
             num_pages = 3
             active_page = getattr(self, "notch_page", 0)
-            active_dot_w = 14.0
-            inactive_dot_w = 4.0
-            dot_h = 3.5
+            active_dot_w = 16.0
+            inactive_dot_w = 5.0
+            dot_h = 4.5
             dot_gap = 5.0
 
             total_dots_w = (active_dot_w if active_page == 0 else inactive_dot_w) + dot_gap + \
@@ -5628,7 +5797,11 @@ class NotchWidget(QWidget):
                            (active_dot_w if active_page == 2 else inactive_dot_w)
 
             start_dot_x = (w - total_dots_w) / 2.0
-            dot_y = h - 7.5
+            # Keep dots comfortably spaced below content on Page 0 (~6.5px gap), and near bezel bottom on remaining pages
+            if active_page == 0:
+                dot_y = 52.5
+            else:
+                dot_y = h - 8.5
             cur_x = start_dot_x
 
             for p_idx in range(num_pages):
@@ -5646,7 +5819,7 @@ class NotchWidget(QWidget):
                     dot_col = QColor(255, 255, 255)
                     dot_col.setAlpha(65)
                     painter.setBrush(QBrush(dot_col))
-                painter.drawRoundedRect(dot_rect, 1.75, 1.75)
+                painter.drawRoundedRect(dot_rect, 2.25, 2.25)
                 cur_x += dw + dot_gap
         else:
             self.page_dot_rects = []
@@ -5675,14 +5848,14 @@ class NotchWidget(QWidget):
         peek_time_col = self.clock_time_color(accent_color, spec=spec)
         peek_time_col.setAlpha(int(245 * opacity))
         painter.setPen(peek_time_col)
-        time_rect = QRectF(0, 3.5 - roll_offset, w, 17.5)
+        time_rect = QRectF(0, 2.5 - roll_offset, w, 17.0)
         painter.drawText(time_rect, Qt.AlignmentFlag.AlignCenter, time_str)
 
         if self.clock_date_visible(spec):
             painter.setFont(font_date)
             date_col = QColor(theme.TEXT_SECONDARY)
             painter.setPen(QColor(date_col.red(), date_col.green(), date_col.blue(), int(210 * opacity)))
-            date_rect = QRectF(0, 21.0 - roll_offset, w, 14.0)
+            date_rect = QRectF(0, 19.5 - roll_offset, w, 14.0)
             painter.drawText(date_rect, Qt.AlignmentFlag.AlignCenter, date_str)
         painter.restore()
 
@@ -5802,18 +5975,20 @@ class NotchWidget(QWidget):
 
         show_box = theme.CLOCK_BOX_BG
         time_content_w = max(w_time, w_date)
-        time_box_w = (time_content_w + 20.0) if show_box else time_content_w
+        time_box_w = (time_content_w + 16.0) if show_box else time_content_w
         time_box_h = 36.0
 
         add_btn_size = 28.0
-        margin_x = 20.0
-        gap_elements = 12.0
+        margin_x = 15.0
+        gap_elements = 10.0
         capsule_w = 184.0
 
         # A media row beside the timer is taller, so that row centres on the notch height
         media_shares_row = self.media_timer_combined()
-        if h >= 54.0 and not media_shares_row:
-            top_cy = 32.0 if h >= 75.0 else 30.0
+        if self.timer_in_notch or media_shares_row:
+            top_cy = h / 2.0
+        elif h >= 54.0:
+            top_cy = 32.0 if h >= 75.0 else 28.0
         else:
             top_cy = h / 2.0
 
@@ -6121,14 +6296,14 @@ class NotchWidget(QWidget):
                 cb_gap = 10.0
                 play_size = 20.0
                 restart_size = 18.0
-                card_pad_h = 14.0
+                card_pad_h = 11.0
 
-                card_w = card_pad_h + cb_size + cb_gap + w_task_text + 10.0 + w_timer_text + 8.0 + restart_size + 8.0 + play_size + card_pad_h
+                card_w = card_pad_h + cb_size + cb_gap + w_task_text + 8.0 + w_timer_text + 6.0 + restart_size + 6.0 + play_size + card_pad_h
             else:
                 play_size = 20.0
                 restart_size = 18.0
-                card_pad_h = 14.0
-                card_w = 12.0 + play_size + 8.0 + restart_size + 10.0 + w_timer_text + card_pad_h
+                card_pad_h = 11.0
+                card_w = card_pad_h + play_size + 6.0 + restart_size + 8.0 + w_timer_text + card_pad_h
 
             card_h = 36.0
             add_w = 0.0 if creating_reminder else (capsule_w if self.add_expanded else add_btn_size)
@@ -6159,7 +6334,7 @@ class NotchWidget(QWidget):
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
 
-                inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
+                inner_time_x = (time_box_x + 8.0) if show_box else time_box_x
                 time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
 
                 painter.setFont(font_time)
@@ -6210,7 +6385,7 @@ class NotchWidget(QWidget):
                 painter.drawRoundedRect(card_rect, 10.0, 10.0)
 
                 # Checkbox [ ]
-                cb_x = card_x + 14.0
+                cb_x = card_x + card_pad_h
                 cb_y = top_cy - (cb_size / 2.0)
                 cb_rect = QRectF(cb_x, cb_y, cb_size, cb_size)
                 self.task_cb_rect = QRect(int(cb_x - 3), int(cb_y - 3), int(cb_size + 6), int(cb_size + 6))
@@ -6248,7 +6423,7 @@ class NotchWidget(QWidget):
                 painter.drawText(QPointF(text_x, text_y), elided_task)
 
                 # Timer display (HH:MM:SS)
-                timer_x = text_x + w_task_text + 10.0
+                timer_x = text_x + w_task_text + 8.0
                 painter.setFont(font_time)
                 timer_col = accent_color if self.timer_is_running else QColor(theme.TEXT_PRIMARY)
                 timer_col.setAlphaF(opacity)
@@ -6258,7 +6433,7 @@ class NotchWidget(QWidget):
                 self.timer_display_rect = QRect(int(timer_x), int(card_y), int(w_timer_text), int(card_h))
 
                 # Restart Button [↺]
-                restart_x = timer_x + w_timer_text + 8.0
+                restart_x = timer_x + w_timer_text + 6.0
                 restart_y = top_cy - (restart_size / 2.0)
                 restart_rect = QRectF(restart_x, restart_y, restart_size, restart_size)
                 self.timer_restart_rect = QRect(int(restart_x - 3), int(restart_y - 3), int(restart_size + 6), int(restart_size + 6))
@@ -6268,7 +6443,7 @@ class NotchWidget(QWidget):
                 renderer_restart.render(painter, restart_rect)
 
                 # Stop / Play Button [⏹ / ▶]
-                play_x = restart_x + restart_size + 8.0
+                play_x = restart_x + restart_size + 6.0
                 play_y = top_cy - (play_size / 2.0)
                 play_rect = QRectF(play_x, play_y, play_size, play_size)
                 self.timer_play_rect = QRect(int(play_x - 3), int(play_y - 3), int(play_size + 6), int(play_size + 6))
@@ -6284,7 +6459,7 @@ class NotchWidget(QWidget):
 
             else:
                 # Standalone Timer Card: [▶/⏹] [↺] HH:MM:SS
-                play_x = card_x + 12.0
+                play_x = card_x + card_pad_h
                 play_y = top_cy - (play_size / 2.0)
                 play_rect = QRectF(play_x, play_y, play_size, play_size)
                 self.timer_play_rect = QRect(int(play_x - 3), int(play_y - 3), int(play_size + 6), int(play_size + 6))
@@ -6299,7 +6474,7 @@ class NotchWidget(QWidget):
                 renderer_play.render(painter, play_rect)
 
                 # Restart Button [↺]
-                restart_x = play_x + play_size + 8.0
+                restart_x = play_x + play_size + 6.0
                 restart_y = top_cy - (restart_size / 2.0)
                 restart_rect = QRectF(restart_x, restart_y, restart_size, restart_size)
                 self.timer_restart_rect = QRect(int(restart_x - 3), int(restart_y - 3), int(restart_size + 6), int(restart_size + 6))
@@ -6309,7 +6484,7 @@ class NotchWidget(QWidget):
                 renderer_restart.render(painter, restart_rect)
 
                 # Timer display (HH:MM:SS)
-                timer_x = restart_x + restart_size + 10.0
+                timer_x = restart_x + restart_size + 8.0
                 painter.setFont(font_time)
                 timer_col = accent_color if self.timer_is_running else QColor(theme.TEXT_PRIMARY)
                 timer_col.setAlphaF(opacity)
@@ -6481,7 +6656,7 @@ class NotchWidget(QWidget):
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
 
-                inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
+                inner_time_x = (time_box_x + 8.0) if show_box else time_box_x
                 time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
 
                 painter.setFont(font_time)
@@ -6533,7 +6708,7 @@ class NotchWidget(QWidget):
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
 
-                inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
+                inner_time_x = (time_box_x + 8.0) if show_box else time_box_x
                 time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
 
                 painter.setFont(font_time)
@@ -6717,7 +6892,7 @@ class NotchWidget(QWidget):
                     cb_gap = 10.0
                     play_size = 20.0
                     play_gap = 10.0
-                    card_pad_h = 14.0
+                    card_pad_h = 11.0
 
                     task_card_w = card_pad_h + cb_size + cb_gap + w_task_text + play_gap + play_size + card_pad_h
                     task_card_h = 36.0
@@ -6759,7 +6934,7 @@ class NotchWidget(QWidget):
                     painter.setPen(QPen(border, 1.0))
                     painter.drawRoundedRect(time_box_rect, 10.0, 10.0)
 
-                inner_time_x = (time_box_x + 10.0) if show_box else time_box_x
+                inner_time_x = (time_box_x + 8.0) if show_box else time_box_x
                 time_text_y = time_box_y + 16.0 if show_date else (top_cy + fm_time.capHeight() / 2.0)
 
                 painter.setFont(font_time)

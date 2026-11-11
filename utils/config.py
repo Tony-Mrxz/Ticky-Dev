@@ -411,4 +411,18 @@ def save_dynamic_island_offset(value: int):
     save_config({"dynamic_island_offset": int(value)})
 
 
+def load_idle_translucent_timeout(default_value=60):
+    """Seconds of notch inactivity before fading into translucent idle state. 0 means disabled."""
+    try:
+        return int(load_config().get("idle_translucent_timeout", default_value))
+    except (TypeError, ValueError):
+        return default_value
+
+
+def save_idle_translucent_timeout(value: int):
+    """Save seconds of notch inactivity before fading into translucent idle state."""
+    save_config({"idle_translucent_timeout": int(value)})
+
+
+
 

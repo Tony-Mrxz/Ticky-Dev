@@ -590,6 +590,30 @@ class SettingsWindow(QWidget):
         self.combo_notch_pos.currentIndexChanged.connect(self.on_notch_position_changed)
         _add_gen_row(pos_inner, "Position Mode", "Choose between Dynamic Island (floating below top) and Top Notch (attached to top bezel)", self.combo_notch_pos)
 
+        _add_divider(pos_inner)
+
+        self.combo_idle_fade = QComboBox(pos_section)
+        self.combo_idle_fade.addItems(["30 Seconds", "1 Minute (Default)", "2 Minutes", "5 Minutes", "Off (Disabled)"])
+        self.combo_idle_fade.setStyleSheet(f"""
+            QComboBox {{
+                background: {theme.MAIN_CARD_COLOR};
+                color: {theme.TEXT_PRIMARY};
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 6px;
+                font-size: 11px;
+                padding: 4px 8px;
+                min-width: 170px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+        """)
+        current_timeout = config.load_idle_translucent_timeout(60)
+        timeout_map = {30: 0, 60: 1, 120: 2, 300: 3, 0: 4}
+        self.combo_idle_fade.setCurrentIndex(timeout_map.get(current_timeout, 1))
+        self.combo_idle_fade.currentIndexChanged.connect(self.on_idle_fade_changed)
+        _add_gen_row(pos_inner, "Inactivity Fade", "Fade idle notch into a translucent ghost island when inactive", self.combo_idle_fade)
+
         # Behavior Card
         window_section = QFrame(gen_content)
         window_section.setObjectName("SettingSection")
@@ -2380,6 +2404,14 @@ class SettingsWindow(QWidget):
         if notch and hasattr(notch, "set_notch_position"):
             notch.set_notch_position(val)
 
+    def on_idle_fade_changed(self, index):
+        index_to_timeout = {0: 30, 1: 60, 2: 120, 3: 300, 4: 0}
+        timeout_val = index_to_timeout.get(index, 60)
+        config.save_idle_translucent_timeout(timeout_val)
+        notch = self._get_notch()
+        if notch and hasattr(notch, "set_idle_translucent_timeout"):
+            notch.set_idle_translucent_timeout(timeout_val)
+
     def on_hide_streaming_toggled(self, checked):
         config.save_hide_while_streaming(checked)
         from utils.window_capture import set_window_capture_exclusion
@@ -2465,6 +2497,14 @@ class SettingsWindow(QWidget):
             notch = self._get_notch()
             if notch and hasattr(notch, "set_notch_position"):
                 notch.set_notch_position(pos_val)
+
+        if hasattr(self, "combo_idle_fade"):
+            index_to_timeout = {0: 30, 1: 60, 2: 120, 3: 300, 4: 0}
+            fade_val = index_to_timeout.get(self.combo_idle_fade.currentIndex(), 60)
+            config.save_idle_translucent_timeout(fade_val)
+            notch = self._get_notch()
+            if notch and hasattr(notch, "set_idle_translucent_timeout"):
+                notch.set_idle_translucent_timeout(fade_val)
 
         # Sync with Windows registry run key
         from utils.startup import set_startup

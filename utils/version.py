@@ -3,7 +3,7 @@
 
 import re
 
-APP_VERSION = "1.3.3"
+APP_VERSION = "1.3.4"
 
 # Releases are published here by .github/workflows/build.yml; the repository has
 # to be public for the anonymous release check to answer.
