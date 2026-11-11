@@ -553,3 +553,29 @@ def test_dynamic_island_position_and_offset(notch_instance):
     notch.set_notch_position("dynamic_island")
     assert notch.get_notch_top_offset() == 14
 
+
+def test_dynamic_island_pill_silhouette(notch_instance):
+    notch = notch_instance
+    notch.show()
+
+    # Dynamic Island mode: Pill silhouette with border radius 50% in compact state
+    notch.set_notch_position("dynamic_island")
+    w, h = 160.0, 32.0
+    path_pill = notch.get_notch_silhouette_path(w, h)
+
+    # Center is filled
+    assert path_pill.contains(QPointF(w / 2.0, h / 2.0))
+    # Extreme corners (0,0) and (w-1, 0) are rounded off / transparent in a pill (no concave ears)
+    assert not path_pill.contains(QPointF(0.0, 0.0))
+    assert not path_pill.contains(QPointF(w - 0.5, 0.0))
+
+    # Top Notch mode: Attached MacBook notch silhouette with ears flaring out to (0,0) and (w,0)
+    notch.set_notch_position("top_notch")
+    path_attached = notch.get_notch_silhouette_path(w, h)
+    assert path_attached.elementAt(0).x == 0.0
+    assert path_attached.elementAt(0).y == 0.0
+
+    # Restore dynamic_island
+    notch.set_notch_position("dynamic_island")
+
+

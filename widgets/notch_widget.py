@@ -5276,6 +5276,50 @@ class NotchWidget(QWidget):
 
         menu.exec(global_pos)
 
+    def get_notch_silhouette_path(self, w: float = None, h: float = None) -> QPainterPath:
+        """Constructs the silhouette path for the notch according to the active position mode."""
+        if w is None:
+            w = float(self.width())
+        if h is None:
+            h = float(self.height())
+
+        # Scale curve radiuses smoothly with height based on base State 2 height (60px)
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, 60.0 - float(self.idle_h))))
+        ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
+        corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
+
+        path = QPainterPath()
+        is_dynamic_island = (config.load_notch_position("dynamic_island") == "dynamic_island") or (self.get_notch_top_offset() > 0)
+        if is_dynamic_island:
+            # Dynamic Island mode: Pill silhouette with border radius 50% (capsule) in compact/idle state
+            pill_r = (h - 1.0) / 2.0
+            if open_progress > 0.0:
+                pill_r = min(pill_r, 15.5 + open_progress * 5.5)
+            rect = QRectF(0.5, 0.5, w - 1.0, h - 1.0)
+            path.addRoundedRect(rect, pill_r, pill_r)
+        else:
+            # Attached Top Notch mode: Apple MacBook notch silhouette with concave ears into screen bezel
+            path.moveTo(0.0, 0.0)
+            # Top-left ear (concave curve from screen edge into notch side)
+            path.quadTo(ear_r, 0.0, ear_r, ear_r)
+            # Left vertical side
+            path.lineTo(ear_r, h - corner_r)
+            # Bottom-left corner (convex curve into bottom)
+            path.quadTo(ear_r, h, ear_r + corner_r, h)
+            # Bottom edge
+            path.lineTo(w - ear_r - corner_r, h)
+            # Bottom-right corner (convex curve into right side)
+            path.quadTo(w - ear_r, h, w - ear_r, h - corner_r)
+            # Right vertical side
+            path.lineTo(w - ear_r, ear_r)
+            # Top-right ear (concave curve out to screen edge)
+            path.quadTo(w - ear_r, 0.0, w, 0.0)
+            # Top edge back to origin
+            path.lineTo(0.0, 0.0)
+            path.closeSubpath()
+
+        return path
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -5290,37 +5334,9 @@ class NotchWidget(QWidget):
 
         # Scale curve radiuses smoothly with height based on base State 2 height (60px)
         open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, 60.0 - float(self.idle_h))))
-        ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
-        corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
 
-        # Construct Apple MacBook notch silhouette
-        path = QPainterPath()
-        path.moveTo(0.0, 0.0)
-
-        # Top-left ear (concave curve from screen edge into notch side)
-        path.quadTo(ear_r, 0.0, ear_r, ear_r)
-
-        # Left vertical side
-        path.lineTo(ear_r, h - corner_r)
-
-        # Bottom-left corner (convex curve into bottom)
-        path.quadTo(ear_r, h, ear_r + corner_r, h)
-
-        # Bottom edge
-        path.lineTo(w - ear_r - corner_r, h)
-
-        # Bottom-right corner (convex curve into right side)
-        path.quadTo(w - ear_r, h, w - ear_r, h - corner_r)
-
-        # Right vertical side
-        path.lineTo(w - ear_r, ear_r)
-
-        # Top-right ear (concave curve out to screen edge)
-        path.quadTo(w - ear_r, 0.0, w, 0.0)
-
-        # Top edge back to origin
-        path.lineTo(0.0, 0.0)
-        path.closeSubpath()
+        # Construct notch silhouette path (pill in Dynamic Island mode, attached notch with ears in Top Notch mode)
+        path = self.get_notch_silhouette_path(w, h)
 
         # Dynamic theme background fill matching active UI theme (Obsidian, Midnight Blue, etc.)
         notch_bg = QColor(theme.BG_COLOR)
