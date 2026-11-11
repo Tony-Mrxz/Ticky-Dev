@@ -469,3 +469,56 @@ def test_settings_window_weather_and_hardware_pages(qapp):
     win.close()
     win.deleteLater()
     qapp.processEvents()
+
+
+# ---------------------------------------------------------------------------
+# Music Notch Multi-Page Isolation Test
+# ---------------------------------------------------------------------------
+def test_music_notch_disables_multi_notch_pages_and_dots(notch_instance):
+    notch = notch_instance
+    notch.show()
+
+    # Suppose user was on page 1 (Weather)
+    notch.set_notch_page(1)
+    assert notch.notch_page == 1
+
+    # Now open media player in notch
+    notch.show_media_in_notch()
+    assert notch.media_in_notch is True
+    assert notch.notch_page == 0
+    assert len(notch.page_dot_rects) == 0
+    assert notch.weather_widget.isHidden()
+    assert notch.hardware_widget.isHidden()
+
+    # Wheel scroll on music notch must NOT cycle pages
+    event_down = QWheelEvent(
+        QPointF(50, 50),
+        QPointF(50, 50),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False
+    )
+    notch.wheelEvent(event_down)
+    assert notch.notch_page == 0
+    assert notch.media_in_notch is True
+
+    # set_notch_page must be ignored while in music notch
+    notch.set_notch_page(1)
+    assert notch.notch_page == 0
+    assert notch.weather_widget.isHidden()
+
+    notch.set_notch_page(2)
+    assert notch.notch_page == 0
+    assert notch.hardware_widget.isHidden()
+
+    # Triggering paintEvent in media mode must NOT generate page dot rects
+    notch.repaint()
+    assert len(notch.page_dot_rects) == 0
+
+    # Closing media notch restores standard idle
+    notch.collapse_media_in_notch()
+    assert notch.media_in_notch is False
+    assert notch.notch_page == 0

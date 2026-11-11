@@ -1054,6 +1054,12 @@ class NotchWidget(QWidget):
         self.media_in_notch = False
         self.media_suspended = False
         self._media_row_left_x = 0.0
+        self.notch_page = 0
+        self.page_dot_rects = []
+        if hasattr(self, "weather_widget") and self.weather_widget:
+            self.weather_widget.hide()
+        if hasattr(self, "hardware_widget") and self.hardware_widget:
+            self.hardware_widget.hide()
         if hasattr(self, "media_poll_timer"):
             self.media_poll_timer.stop()
         if hasattr(self, "media_timeline_timer"):
@@ -1183,7 +1189,7 @@ class NotchWidget(QWidget):
                 self.app_search_widget.reset_state()
 
         # 8b. Exit Weather mode
-        if getattr(self, "weather_in_notch", False) and entering_mode != "weather":
+        if (getattr(self, "weather_in_notch", False) or entering_mode == "media") and entering_mode != "weather":
             self.weather_in_notch = False
             if hasattr(self, "weather_widget") and self.weather_widget:
                 self.weather_widget.hide()
@@ -1193,7 +1199,7 @@ class NotchWidget(QWidget):
                 self.sub_pill.btn_weather.setActive(False)
 
         # 8c. Exit Hardware Monitor mode
-        if getattr(self, "hardware_in_notch", False) and entering_mode != "hardware":
+        if (getattr(self, "hardware_in_notch", False) or entering_mode == "media") and entering_mode != "hardware":
             self.hardware_in_notch = False
             if hasattr(self, "hardware_widget") and self.hardware_widget:
                 self.hardware_widget.hide()
@@ -1201,6 +1207,10 @@ class NotchWidget(QWidget):
                 self.hardware_collapse_timer.stop()
             if hasattr(self, "sub_pill") and self.sub_pill and hasattr(self.sub_pill, "btn_hardware"):
                 self.sub_pill.btn_hardware.setActive(False)
+
+        if entering_mode == "media":
+            self.notch_page = 0
+            self.page_dot_rects = []
 
         # 8d. Exit Calendar mode
         if getattr(self, "calendar_in_notch", False) and entering_mode != "calendar":
@@ -1599,10 +1609,16 @@ class NotchWidget(QWidget):
             self.update_ai_chat_geometry()
         if getattr(self, "reminders_in_notch", False):
             self.update_reminder_geometry()
-        if getattr(self, "notch_page", 0) == 1 and hasattr(self, "weather_widget") and self.weather_widget.isVisible():
-            self.update_weather_geometry()
-        if getattr(self, "notch_page", 0) == 2 and hasattr(self, "hardware_widget") and self.hardware_widget.isVisible():
-            self.update_hardware_geometry()
+        if getattr(self, "media_in_notch", False):
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
+        else:
+            if getattr(self, "notch_page", 0) == 1 and hasattr(self, "weather_widget") and self.weather_widget.isVisible():
+                self.update_weather_geometry()
+            if getattr(self, "notch_page", 0) == 2 and hasattr(self, "hardware_widget") and self.hardware_widget.isVisible():
+                self.update_hardware_geometry()
         if getattr(self, "calendar_in_notch", False) and hasattr(self, "calendar_widget") and self.calendar_widget.isVisible():
             self.update_calendar_geometry()
 
@@ -2651,6 +2667,16 @@ class NotchWidget(QWidget):
         self.tasks_in_notch = False
         self.notes_in_notch = False
         self.add_expanded = False
+        self.notch_page = 0
+        self.page_dot_rects = []
+        if hasattr(self, "weather_widget") and self.weather_widget:
+            self.weather_widget.hide()
+        if hasattr(self, "hardware_widget") and self.hardware_widget:
+            self.hardware_widget.hide()
+        if hasattr(self, "weather_collapse_timer"):
+            self.weather_collapse_timer.stop()
+        if hasattr(self, "hardware_collapse_timer"):
+            self.hardware_collapse_timer.stop()
         self.media_in_notch = True
         self._is_hovered = True
 
@@ -3411,6 +3437,8 @@ class NotchWidget(QWidget):
 
     def set_notch_page(self, page: int):
         """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
+        if getattr(self, "media_in_notch", False):
+            return
         page = max(0, min(2, page))
         self.notch_page = page
         target_w, target_h = self._get_notch_page_dimensions(page)
@@ -3429,7 +3457,8 @@ class NotchWidget(QWidget):
                 self.hardware_widget.hide()
             return
 
-        if (getattr(self, "dictation_in_notch", False) or
+        if (getattr(self, "media_in_notch", False) or
+            getattr(self, "dictation_in_notch", False) or
             getattr(self, "ai_chat_in_notch", False) or
             getattr(self, "app_search_in_notch", False) or
             getattr(self, "active_reminder_alert", None) is not None or
@@ -3469,22 +3498,26 @@ class NotchWidget(QWidget):
 
     @property
     def weather_in_notch(self):
-        return getattr(self, "notch_page", 0) == 1 and (self._is_hovered or self.height() > 38)
+        return getattr(self, "notch_page", 0) == 1 and (self._is_hovered or self.height() > 38) and not getattr(self, "media_in_notch", False)
 
     @weather_in_notch.setter
     def weather_in_notch(self, val):
         if val:
+            if getattr(self, "media_in_notch", False):
+                self._clear_media_in_notch()
             self.set_notch_page(1)
         elif getattr(self, "notch_page", 0) == 1:
             self.set_notch_page(0)
 
     @property
     def hardware_in_notch(self):
-        return getattr(self, "notch_page", 0) == 2 and (self._is_hovered or self.height() > 38)
+        return getattr(self, "notch_page", 0) == 2 and (self._is_hovered or self.height() > 38) and not getattr(self, "media_in_notch", False)
 
     @hardware_in_notch.setter
     def hardware_in_notch(self, val):
         if val:
+            if getattr(self, "media_in_notch", False):
+                self._clear_media_in_notch()
             self.set_notch_page(2)
         elif getattr(self, "notch_page", 0) == 2:
             self.set_notch_page(0)
@@ -4149,6 +4182,10 @@ class NotchWidget(QWidget):
             event.accept()
             return
 
+        if getattr(self, "media_in_notch", False):
+            event.accept()
+            return
+
         if self.tasks_in_notch:
             pixels = event.pixelDelta().y()
             if pixels:
@@ -4253,6 +4290,12 @@ class NotchWidget(QWidget):
             return
 
         if getattr(self, "media_in_notch", False):
+            self.notch_page = 0
+            self.page_dot_rects = []
+            if hasattr(self, "weather_widget") and self.weather_widget:
+                self.weather_widget.hide()
+            if hasattr(self, "hardware_widget") and self.hardware_widget:
+                self.hardware_widget.hide()
             if self.timer_in_notch:
                 # Paused timer row stays open while the cursor is on the notch
                 if not self.timer_is_running and hasattr(self, "timer_stopped_collapse_timer"):
@@ -4278,7 +4321,7 @@ class NotchWidget(QWidget):
                     self.timer_stopped_collapse_timer.stop()
             if not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch:
                 self.update_notch_timer_geometry()
-        elif not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch and not self.tasks_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "calendar_in_notch", False):
+        elif not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch and not self.tasks_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "calendar_in_notch", False) and not getattr(self, "media_in_notch", False):
             self.pick_random_task()
             self.task_completed_anim = False
             target_w, target_h = self._get_notch_page_dimensions(self.notch_page)
@@ -4342,6 +4385,8 @@ class NotchWidget(QWidget):
             if hasattr(self, "sub_pill") and self.sub_pill.isVisible():
                 self.sub_pill_leave_timer.start(350)
             self._is_hovered = False
+            self.notch_page = 0
+            self.page_dot_rects = []
             self.hover_media_play = False
             self.hover_media_prev = False
             self.hover_media_next = False
@@ -4522,13 +4567,13 @@ class NotchWidget(QWidget):
             return
 
         # Check if hovering over bottom page indicator dots in State 2
-        if hasattr(self, "page_dot_rects") and self.page_dot_rects:
+        if not getattr(self, "media_in_notch", False) and hasattr(self, "page_dot_rects") and self.page_dot_rects:
             for dot_rect, _ in self.page_dot_rects:
                 if dot_rect.contains(pos):
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
                     return
 
-        if getattr(self, "notch_page", 0) != 0 and (self._is_hovered or self.height() > 38):
+        if not getattr(self, "media_in_notch", False) and getattr(self, "notch_page", 0) != 0 and (self._is_hovered or self.height() > 38):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             return
 
@@ -4970,7 +5015,7 @@ class NotchWidget(QWidget):
             pos = event.position().toPoint()
 
             # State 2 page indicator dots click (Page 0: Tasks/Time, Page 1: Weather, Page 2: System Stats)
-            if hasattr(self, "page_dot_rects") and self.page_dot_rects:
+            if not getattr(self, "media_in_notch", False) and hasattr(self, "page_dot_rects") and self.page_dot_rects:
                 for dot_rect, p_idx in self.page_dot_rects:
                     if dot_rect.contains(pos):
                         self.set_notch_page(p_idx)
@@ -5016,14 +5061,10 @@ class NotchWidget(QWidget):
 
             # When expanded, handle clicks on interactive elements only
             if self.height() > 38:
-                if getattr(self, "notch_page", 0) != 0:
-                    # Weather and Hardware monitor pages handle clicks in child widgets
-                    return
-
-                # Media player in notch clicks (play/pause, prev, next)
+                # Media player in notch clicks (play/pause, prev, next) - must handle before page checks
                 if getattr(self, "media_in_notch", False):
                     # Beside a timer row only the player block itself is claimed by media
-                    if (not self.timer_in_notch) or self.media_block_rect.contains(pos):
+                    if (not self.timer_in_notch) or (hasattr(self, "media_block_rect") and self.media_block_rect.contains(pos)):
                         if hasattr(self, "media_play_rect") and self.media_play_rect.contains(pos):
                             self.notch_media_play_pause()
                             return
@@ -5035,6 +5076,10 @@ class NotchWidget(QWidget):
                             return
                     if not self.timer_in_notch:
                         return
+
+                if getattr(self, "notch_page", 0) != 0:
+                    # Weather and Hardware monitor pages handle clicks in child widgets
+                    return
 
                 # Mini AI chat close button click
                 if self.ai_chat_in_notch:
@@ -5521,14 +5566,20 @@ class NotchWidget(QWidget):
                 self._media_row_left_x = 0.0
             self.draw_media_in_notch(painter, w, h, 1.0, accent_color, left_x=left_x)
 
-        # 4. State 2 Bottom Page Indicator Dots (0: Tasks/Time, 1: Weather, 2: System Stats)
-        self.draw_page_indicator_dots(painter, w, h, accent_color)
+        # 4. State 2 Bottom Page Indicator Dots (0: Tasks/Time, 1: Weather, 2: System Stats) - not shown in media player mode
+        if not getattr(self, "media_in_notch", False):
+            self.draw_page_indicator_dots(painter, w, h, accent_color)
+        else:
+            self.page_dot_rects = []
 
         painter.restore()
 
     def draw_page_indicator_dots(self, painter, w, h, accent_color):
         """Draws the bottom 3-dot page indicator for State 2 (Page 0, 1, 2)."""
-        if (self._is_hovered or h >= 48.0) and not self.tasks_in_notch and not self.notes_in_notch and not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "calendar_in_notch", False) and getattr(self, "active_reminder_alert", None) is None and getattr(self, "active_update_alert", None) is None:
+        if getattr(self, "media_in_notch", False):
+            self.page_dot_rects = []
+            return
+        if (self._is_hovered or h >= 48.0) and not self.tasks_in_notch and not self.notes_in_notch and not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "calendar_in_notch", False) and not getattr(self, "media_in_notch", False) and getattr(self, "active_reminder_alert", None) is None and getattr(self, "active_update_alert", None) is None:
             self.page_dot_rects = []
             num_pages = 3
             active_page = getattr(self, "notch_page", 0)
