@@ -172,7 +172,7 @@ class NotchWidget(QWidget):
         # Geometry dimensions
         self.idle_w = 120
         self.idle_h = 32
-        self.hover_w = 440
+        self.hover_w = 340
         self.hover_h = 68
 
         # State 2 Multi-page navigation (0: Normal Tasks/Time, 1: Weather, 2: System Stats)
@@ -1531,7 +1531,7 @@ class NotchWidget(QWidget):
         time_box_w = (time_content_w + 20.0) if show_box else time_content_w
 
         add_btn_size = 28.0
-        margin_x = 22.0
+        margin_x = 20.0
         gap_elements = 12.0
 
         if self.current_random_task:
@@ -1550,7 +1550,7 @@ class NotchWidget(QWidget):
             task_card_w = card_pad_h + cb_size + cb_gap + w_task_text + play_gap + play_size + card_pad_h
             total_content_w = time_box_w + gap_elements + task_card_w + gap_elements + add_btn_size
             target_w = int(total_content_w + (margin_x * 2.0))
-            return max(320, target_w)
+            return max(220, target_w)
         else:
             total_content_w = time_box_w + gap_elements + add_btn_size
             target_w = int(total_content_w + (margin_x * 2.0))
@@ -1594,11 +1594,11 @@ class NotchWidget(QWidget):
 
         capsule_w = 184.0
         gap_elements = 14.0
-        margin_x = 22.0
+        margin_x = 20.0
 
         total_content_w = time_box_w + gap_elements + capsule_w
         target_w = int(total_content_w + (margin_x * 2.0))
-        return max(340, target_w)
+        return max(300, target_w)
 
     def update_task_input_geometry(self):
         margin_x = 22
@@ -3451,7 +3451,8 @@ class NotchWidget(QWidget):
             h = HARDWARE_NOTCH_HEIGHT if show_top else HARDWARE_NOTCH_COMPACT_HEIGHT
             return HARDWARE_NOTCH_WIDTH, h
         else:
-            return max(380, self.calc_expanded_width()), 68
+            expanded_w = self.calc_add_expanded_width() if getattr(self, "add_expanded", False) else self.calc_expanded_width()
+            return expanded_w, 68
 
     def set_notch_page(self, page: int):
         """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
@@ -5805,7 +5806,7 @@ class NotchWidget(QWidget):
         time_box_h = 36.0
 
         add_btn_size = 28.0
-        margin_x = 22.0
+        margin_x = 20.0
         gap_elements = 12.0
         capsule_w = 184.0
 

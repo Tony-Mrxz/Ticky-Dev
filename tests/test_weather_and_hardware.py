@@ -579,3 +579,30 @@ def test_dynamic_island_pill_silhouette(notch_instance):
     notch.set_notch_position("dynamic_island")
 
 
+def test_notch_page0_dynamic_width_by_task(notch_instance):
+    notch = notch_instance
+    notch.show()
+
+    # Empty task state
+    notch.current_random_task = None
+    w_empty = notch.calc_expanded_width()
+    dim_empty, _ = notch._get_notch_page_dimensions(0)
+    assert dim_empty == w_empty
+    assert w_empty <= 240
+
+    # Short task
+    notch.current_random_task = "AI"
+    w_short = notch.calc_expanded_width()
+    dim_short, _ = notch._get_notch_page_dimensions(0)
+    assert dim_short == w_short
+    assert w_short > w_empty
+
+    # Longer task
+    notch.current_random_task = "AI integration and long descriptive milestone"
+    w_long = notch.calc_expanded_width()
+    dim_long, _ = notch._get_notch_page_dimensions(0)
+    assert dim_long == w_long
+    assert w_long > w_short
+
+
+
