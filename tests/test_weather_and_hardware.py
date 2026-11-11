@@ -522,3 +522,34 @@ def test_music_notch_disables_multi_notch_pages_and_dots(notch_instance):
     notch.collapse_media_in_notch()
     assert notch.media_in_notch is False
     assert notch.notch_page == 0
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Island Position Mode Test
+# ---------------------------------------------------------------------------
+def test_dynamic_island_position_and_offset(notch_instance):
+    notch = notch_instance
+    notch.show()
+
+    # Dynamic Island position (Position 2: default floating 14px below top)
+    notch.set_notch_position("dynamic_island")
+    assert config.load_notch_position() == "dynamic_island"
+    assert notch.get_notch_top_offset() == 14
+
+    screen = notch.screen() or QApplication.primaryScreen()
+    screen_geo = screen.geometry()
+    notch.reposition_notch()
+    assert notch.y() == screen_geo.y() + 14
+
+    # Top Notch position (Position 1: flush at top y = screen_geo.y())
+    notch.set_notch_position("top_notch")
+    assert config.load_notch_position() == "top_notch"
+    assert notch.get_notch_top_offset() == 0
+
+    notch.reposition_notch()
+    assert notch.y() == screen_geo.y()
+
+    # Return to Dynamic Island
+    notch.set_notch_position("dynamic_island")
+    assert notch.get_notch_top_offset() == 14
+

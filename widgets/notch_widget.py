@@ -728,14 +728,32 @@ class NotchWidget(QWidget):
             from utils.window_capture import set_window_capture_exclusion
             set_window_capture_exclusion(int(self.winId()), config.load_hide_while_streaming())
 
+    def get_notch_top_offset(self) -> int:
+        """Returns vertical offset from screen top (0 for Top Notch, default 14px for Dynamic Island)."""
+        pos = config.load_notch_position("dynamic_island")
+        if pos == "dynamic_island":
+            return config.load_dynamic_island_offset(14)
+        return 0
+
+    def set_notch_position(self, pos_name: str):
+        """Update notch position: 'dynamic_island' (floating) or 'top_notch' (flush to top)."""
+        config.save_notch_position(pos_name)
+        if self._is_hovered or self.height() > 38:
+            self.animate_to(self.width(), self.height(), duration=200)
+        else:
+            self.reposition_notch()
+        if hasattr(self, "sub_pill") and self.sub_pill and self.sub_pill.isVisible():
+            self.sub_pill.recenter_under_notch()
+        self.update()
+
     def reposition_notch(self):
-        """Center the notch horizontally at the very top edge of the primary screen."""
+        """Center the notch horizontally at the top edge of the primary screen, applying position offset."""
         screen = self.screen() or QApplication.primaryScreen()
         if not screen:
             return
         screen_geo = screen.geometry()
         target_x = screen_geo.x() + (screen_geo.width() - self.width()) // 2
-        target_y = screen_geo.y()
+        target_y = screen_geo.y() + self.get_notch_top_offset()
         self.move(target_x, target_y)
         self.ensure_stays_on_top()
         if hasattr(self, "sub_pill") and self.sub_pill:
@@ -4960,7 +4978,7 @@ class NotchWidget(QWidget):
             return
         screen_geo = screen.geometry()
         target_x = screen_geo.x() + (screen_geo.width() - target_w) // 2
-        target_y = screen_geo.y()
+        target_y = screen_geo.y() + self.get_notch_top_offset()
         target_rect = QRect(target_x, target_y, target_w, target_h)
 
         if self.anim and self.anim.state() == QPropertyAnimation.State.Running:

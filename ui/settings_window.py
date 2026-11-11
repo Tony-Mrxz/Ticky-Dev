@@ -561,6 +561,35 @@ class SettingsWindow(QWidget):
             div.setFixedHeight(1)
             layout.addWidget(div)
             
+        # Position Mode Card
+        pos_section = QFrame(gen_content)
+        pos_section.setObjectName("SettingSection")
+        pos_inner = QVBoxLayout(pos_section)
+        pos_inner.setContentsMargins(12, 10, 12, 10)
+        pos_inner.setSpacing(0)
+
+        self.combo_notch_pos = QComboBox(pos_section)
+        self.combo_notch_pos.addItems(["Dynamic Island (Floating)", "Top Notch (Attached)"])
+        self.combo_notch_pos.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(0, 0, 0, 60);
+                border: 1px solid {theme.BORDER_COLOR};
+                border-radius: 6px;
+                color: {theme.TEXT_PRIMARY};
+                font-family: {theme.FONT_FAMILY};
+                font-size: 11px;
+                padding: 4px 8px;
+                min-width: 170px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+        """)
+        current_pos = config.load_notch_position("dynamic_island")
+        self.combo_notch_pos.setCurrentIndex(0 if current_pos == "dynamic_island" else 1)
+        self.combo_notch_pos.currentIndexChanged.connect(self.on_notch_position_changed)
+        _add_gen_row(pos_inner, "Position Mode", "Choose between Dynamic Island (floating below top) and Top Notch (attached to top bezel)", self.combo_notch_pos)
+
         # Behavior Card
         window_section = QFrame(gen_content)
         window_section.setObjectName("SettingSection")
@@ -646,6 +675,11 @@ class SettingsWindow(QWidget):
         self.lbl_update_status.setObjectName("SettingDescription")
         self.lbl_update_status.setWordWrap(True)
         updates_inner.addWidget(self.lbl_update_status)
+
+        lbl_pos_title = QLabel("Position Mode", gen_content)
+        lbl_pos_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_pos_title)
+        gen_content_layout.addWidget(pos_section)
 
         lbl_sys_title = QLabel("System & Behavior", gen_content)
         lbl_sys_title.setObjectName("SettingSectionTitle")
@@ -2329,6 +2363,23 @@ class SettingsWindow(QWidget):
 
         self.update_settings_style()
 
+    def _get_notch(self):
+        """Retrieve the active NotchWidget instance."""
+        if self.parent_window and hasattr(self.parent_window, "notch_widget") and self.parent_window.notch_widget:
+            return self.parent_window.notch_widget
+        from widgets.notch_widget import NotchWidget
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, NotchWidget):
+                return widget
+        return None
+
+    def on_notch_position_changed(self, index):
+        val = "dynamic_island" if index == 0 else "top_notch"
+        config.save_notch_position(val)
+        notch = self._get_notch()
+        if notch and hasattr(notch, "set_notch_position"):
+            notch.set_notch_position(val)
+
     def on_hide_streaming_toggled(self, checked):
         config.save_hide_while_streaming(checked)
         from utils.window_capture import set_window_capture_exclusion
@@ -2407,6 +2458,13 @@ class SettingsWindow(QWidget):
         config.save_start_on_startup(sos)
         config.save_hide_while_streaming(hws)
         config.save_check_for_updates(cfu)
+
+        if hasattr(self, "combo_notch_pos"):
+            pos_val = "dynamic_island" if self.combo_notch_pos.currentIndex() == 0 else "top_notch"
+            config.save_notch_position(pos_val)
+            notch = self._get_notch()
+            if notch and hasattr(notch, "set_notch_position"):
+                notch.set_notch_position(pos_val)
 
         # Sync with Windows registry run key
         from utils.startup import set_startup

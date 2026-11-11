@@ -388,4 +388,27 @@ def save_hardware_show_top_consumers(value: bool):
     save_config({"hardware_show_top_consumers": bool(value)})
 
 
+def load_notch_position(default_value="dynamic_island"):
+    """Position mode for the notch: 'dynamic_island' (floating below top edge) or 'top_notch' (flush to top edge)."""
+    return load_config().get("notch_position", default_value)
+
+
+def save_notch_position(value: str):
+    """Save notch position mode: 'dynamic_island' or 'top_notch'."""
+    save_config({"notch_position": str(value)})
+
+
+def load_dynamic_island_offset(default_value=14):
+    """Vertical margin in pixels from screen top when in Dynamic Island mode."""
+    try:
+        return int(load_config().get("dynamic_island_offset", default_value))
+    except (TypeError, ValueError):
+        return default_value
+
+
+def save_dynamic_island_offset(value: int):
+    """Save vertical margin in pixels from screen top when in Dynamic Island mode."""
+    save_config({"dynamic_island_offset": int(value)})
+
+
 
