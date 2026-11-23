@@ -1,6 +1,6 @@
 # Ticky — Premium Desktop Companion for Windows
 
-[![Version](https://img.shields.io/badge/version-1.3.4-00E5FF.svg?style=flat-square)](https://github.com/Tony-Mrxz/Ticky-Dev/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.3.5-00E5FF.svg?style=flat-square)](https://github.com/Tony-Mrxz/Ticky-Dev/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20x64-0078D4.svg?style=flat-square)](https://github.com/Tony-Mrxz/Ticky-Dev)
 [![Python](https://img.shields.io/badge/python-3.14-3776AB.svg?style=flat-square)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/UI-PySide6%20%2F%20Qt-41CD52.svg?style=flat-square)](https://www.qt.io/)
@@ -62,9 +62,9 @@ Glide across dedicated utility pages right from within the expanded island:
 ## 🚀 Installation
 
 ### Windows Installer (Recommended)
-Download the latest `Ticky-Setup-1.3.4.exe` from [Releases](https://github.com/Tony-Mrxz/Ticky-Dev/releases/latest).
+Download the latest `Ticky-Setup-1.3.5.exe` from [Releases](https://github.com/Tony-Mrxz/Ticky-Dev/releases/latest).
 
-1. Run `Ticky-Setup-1.3.4.exe`.
+1. Run `Ticky-Setup-1.3.5.exe`.
 2. Installs per-user into `%LOCALAPPDATA%\Programs\Ticky` (no administrator privileges required).
 3. Completely self-contained: bundles the Python runtime, all Qt libraries, and the offline Whisper speech model.
 4. Auto-update checks seamlessly alert you when newer builds are released.
@@ -108,7 +108,7 @@ python main.py
 # Skip initial smoke launch check:
 .\build_installer.ps1 -SkipSmoke
 ```
-The compiled installer will be written to `installer\output\Ticky-Setup-1.3.4.exe`.
+The compiled installer will be written to `installer\output\Ticky-Setup-1.3.5.exe`.
 
 ---
 
@@ -129,14 +129,24 @@ Key configurable options include:
 
 ---
 
-## 📜 What's New in v1.3.4
+## 📜 What's New in v1.3.5
 
-- **Dynamic Island as Default**: Position mode defaults to Dynamic Island (floating pill below the bezel) for all new installs and sessions.
-- **Smart Idle Translucency**: Dynamic Island gracefully fades to 25% opacity when idle, preserving screen real estate, and wakes up instantly on hover or notifications.
-- **Inactivity Fade Timer Settings**: Added customizable fade timeout dropdown in Settings (30s, 1m, 2m, 5m, Off).
-- **Compact Timer Design**: Equalized top/bottom margins, lowered height to 50px, and streamlined element gaps.
-- **Enhanced Border Contrast**: Polished border outlines for crisp contrast and visibility across dark wallpapers.
-- **Adaptive Task Page Width**: Smooth Page 1 expansion that hugs content and task pill sizes dynamically.
+- **Bucket Shelf Drag & Drop (In & Out)**:
+  - Drag files, images, links, or text notes anywhere onto the notch to save them into your quick bucket shelf.
+  - Drag items out of the bucket and drop/paste them directly into Windows File Explorer, Desktop, web browsers, Discord, Slack, or documents with clean original filenames.
+  - Robust bitmap image extraction across browsers, Snipping Tool, Paint, and clipboard.
+- **Hardware Telemetry Fix & 250x Optimization**:
+  - Eliminated the background thread destruction crash (`QThread: Destroyed while thread is still running`) with a persistent pause/resume worker.
+  - Optimized PDH query patterns to reduce poll latency from 3000ms down to 13ms.
+- **Upcoming Reminders Dashboard Counter**:
+  - The notch dashboard's `TASKS` card now dynamically displays both note counts and upcoming active reminders.
+- **Micro-Card & Badge UI Polish**:
+  - Modernized size display pills on cards with `border-radius: 4px` and header badges with `border-radius: 6px`.
+- **Dynamic Island as Default & Border Line Visibility**:
+  - Dynamic Island mode is now the default position for all new installations.
+  - Added an adjustable notch border brightness slider in Settings for maximum clarity against deep black backgrounds.
+- **Smart Idle Translucency (Ghost Island)**:
+  - Dynamic Island gracefully fades to 25% opacity when idle and wakes up instantly on hover, timer events, or alerts. Configurable inactivity timeout (30s, 1m, 2m, 5m, Off).
 
 ---
 
