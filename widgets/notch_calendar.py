@@ -33,7 +33,8 @@ EVENTS_W = 176
 NOTCH_PADDING_X = 22  # 10px notch ear + 12px inner border margin = 22px
 NOTCH_PADDING_Y = 12  # 12px top and bottom inner border margin
 NOTCH_EXTRA_H = NOTCH_PADDING_Y * 2  # 24px
-NOTCH_WIDTH = CALENDAR_W + DIVIDER_GAP + DIVIDER_W + DIVIDER_GAP + EVENTS_W + (NOTCH_PADDING_X * 2)  # 500
+PANEL_W = CALENDAR_W + DIVIDER_GAP + DIVIDER_W + DIVIDER_GAP + EVENTS_W
+NOTCH_WIDTH = PANEL_W + (NOTCH_PADDING_X * 2)  # 500
 CALENDAR_UNHOVER_TIMEOUT_MS = 1200  # 1.2s unhover fallback timer (reduced from 3s)
 
 CHEVRON_LEFT_SVG = (

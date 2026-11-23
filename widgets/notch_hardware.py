@@ -290,9 +290,9 @@ class NotchHardwareWidget(QWidget):
         self.card_mem.set_action_enabled(is_memreduct_available())
         show_top = config.load_hardware_show_top_consumers(False)
         self.procs_container.setVisible(show_top)
-        self.service.start_monitoring()
         if self.service.cached_stats:
             self._render_stats(self.service.cached_stats)
+        self.service.start_monitoring()
 
     def hideEvent(self, event):
         super().hideEvent(event)

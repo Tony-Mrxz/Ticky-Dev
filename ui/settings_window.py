@@ -614,6 +614,49 @@ class SettingsWindow(QWidget):
         self.combo_idle_fade.currentIndexChanged.connect(self.on_idle_fade_changed)
         _add_gen_row(pos_inner, "Inactivity Fade", "Fade idle notch into a translucent ghost island when inactive", self.combo_idle_fade)
 
+        # Notch Dashboard Card
+        dash_section = QFrame(gen_content)
+        dash_section.setObjectName("SettingSection")
+        dash_inner = QVBoxLayout(dash_section)
+        dash_inner.setContentsMargins(12, 10, 12, 10)
+        dash_inner.setSpacing(0)
+
+        self.notch_shortcut_inputs = []
+        for slot, saved in enumerate(config.load_notch_shortcuts()):
+            if slot:
+                _add_divider(dash_inner)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 6, 0, 6)
+            row.setSpacing(8)
+
+            lbl_slot = QLabel(f"Button {slot + 1}", dash_section)
+            lbl_slot.setObjectName("SettingLabel")
+            lbl_slot.setFixedWidth(64)
+            row.addWidget(lbl_slot)
+
+            input_label = QLineEdit(dash_section)
+            input_label.setObjectName("SpotifyInput")
+            input_label.setPlaceholderText("Name")
+            input_label.setMaxLength(12)
+            input_label.setFixedWidth(110)
+            input_label.setText(saved["label"])
+            row.addWidget(input_label)
+
+            input_url = QLineEdit(dash_section)
+            input_url.setObjectName("SpotifyInput")
+            input_url.setPlaceholderText("github.com")
+            input_url.setText(saved["url"])
+            row.addWidget(input_url, 1)
+
+            dash_inner.addLayout(row)
+            self.notch_shortcut_inputs.append((input_label, input_url))
+
+        lbl_dash_hint = QLabel("Each button opens its website straight from the notch dashboard. "
+                               "Leave a slot empty to show an add placeholder.", dash_section)
+        lbl_dash_hint.setObjectName("SettingDescription")
+        lbl_dash_hint.setWordWrap(True)
+        dash_inner.addWidget(lbl_dash_hint)
+
         # Behavior Card
         window_section = QFrame(gen_content)
         window_section.setObjectName("SettingSection")
@@ -704,6 +747,11 @@ class SettingsWindow(QWidget):
         lbl_pos_title.setObjectName("SettingSectionTitle")
         gen_content_layout.addWidget(lbl_pos_title)
         gen_content_layout.addWidget(pos_section)
+
+        lbl_dash_title = QLabel("Notch Dashboard", gen_content)
+        lbl_dash_title.setObjectName("SettingSectionTitle")
+        gen_content_layout.addWidget(lbl_dash_title)
+        gen_content_layout.addWidget(dash_section)
 
         lbl_sys_title = QLabel("System & Behavior", gen_content)
         lbl_sys_title.setObjectName("SettingSectionTitle")
@@ -2392,6 +2440,7 @@ class SettingsWindow(QWidget):
         if self.parent_window and hasattr(self.parent_window, "notch_widget") and self.parent_window.notch_widget:
             return self.parent_window.notch_widget
         from widgets.notch_widget import NotchWidget
+        from PySide6.QtWidgets import QApplication
         for widget in QApplication.topLevelWidgets():
             if isinstance(widget, NotchWidget):
                 return widget
@@ -2497,6 +2546,14 @@ class SettingsWindow(QWidget):
             notch = self._get_notch()
             if notch and hasattr(notch, "set_notch_position"):
                 notch.set_notch_position(pos_val)
+
+        if hasattr(self, "notch_shortcut_inputs"):
+            slots = [{"label": label_edit.text().strip(), "url": url_edit.text().strip()}
+                     for label_edit, url_edit in self.notch_shortcut_inputs]
+            config.save_notch_shortcuts(slots)
+            notch = self._get_notch()
+            if notch and hasattr(notch, "dashboard_widget"):
+                notch.dashboard_widget.reload()
 
         if hasattr(self, "combo_idle_fade"):
             index_to_timeout = {0: 30, 1: 60, 2: 120, 3: 300, 4: 0}

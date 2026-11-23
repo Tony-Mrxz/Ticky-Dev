@@ -5,15 +5,16 @@ Hardware monitoring service for Ticky:
 - RAM usage (percentage, used / total GB).
 - Network download and upload speed delta.
 - Battery status (charging, remaining time, percentage).
-- GPU model detection via Windows registry / system.
-- Top consuming processes list.
+- GPU model detection and safe 3D engine utilization sampling.
+- Top consuming processes list (when enabled in settings).
 - Runs on a dedicated background thread with zero UI lag,
-  and only polls when actively requested (paused when notch is closed).
+  paused when notch is closed (0% background CPU impact).
 """
 
 import os
 import sys
 import time
+import threading
 from PySide6.QtCore import QObject, Signal, QThread
 
 try:
@@ -56,39 +57,97 @@ class HardwareWorker(QThread):
     """Background worker that continuously samples system metrics and emits updates."""
     stats_updated = Signal(dict)
 
-    def __init__(self, poll_interval_ms: int = 1500, parent=None):
+    def __init__(self, poll_interval_ms: int = 1000, parent=None):
         super().__init__(parent)
-        self.poll_interval = poll_interval_ms / 1000.0
-        self._running = False
+        self.poll_interval = max(0.5, poll_interval_ms / 1000.0)
+        self._running = True
+        self._active_event = threading.Event()
         self._gpu_model = get_gpu_model_cached()
+        self._gpu_query = None
+        self._gpu_counter = None
+        self._gpu_disabled = False
+        self._gpu_error_count = 0
+
+    def pause(self):
+        """Pause polling to burn 0% CPU in background."""
+        self._active_event.clear()
+
+    def resume(self):
+        """Resume polling immediately."""
+        self._active_event.set()
+
+    def stop(self):
+        """Signal thread to exit cleanly."""
+        self._running = False
+        self._active_event.set()
+
+    def _init_gpu(self):
+        if sys.platform != "win32" or self._gpu_disabled:
+            return
+        try:
+            import win32pdh
+            self._gpu_query = win32pdh.OpenQuery()
+            self._gpu_counter = win32pdh.AddCounter(
+                self._gpu_query, r'\GPU Engine(*engtype_3D)\Utilization Percentage'
+            )
+            win32pdh.CollectQueryData(self._gpu_query)
+        except Exception:
+            self._gpu_query = None
+            self._gpu_counter = None
+
+    def _close_gpu(self):
+        if self._gpu_query:
+            try:
+                import win32pdh
+                win32pdh.CloseQuery(self._gpu_query)
+            except Exception:
+                pass
+            self._gpu_query = None
+            self._gpu_counter = None
+
+    def _sample_gpu(self) -> float:
+        if self._gpu_disabled:
+            return 0.0
+        if not self._gpu_query or not self._gpu_counter:
+            self._init_gpu()
+            if not self._gpu_query or not self._gpu_counter:
+                return 0.0
+
+        try:
+            import win32pdh
+            win32pdh.CollectQueryData(self._gpu_query)
+            res = win32pdh.GetFormattedCounterArray(self._gpu_counter, win32pdh.PDH_FMT_DOUBLE)
+            if isinstance(res, dict):
+                return min(100.0, max(0.0, sum(v for v in res.values() if v > 0)))
+        except Exception:
+            self._gpu_error_count += 1
+            if self._gpu_error_count >= 3:
+                self._gpu_disabled = True
+            self._close_gpu()
+        return 0.0
 
     def run(self):
-        self._running = True
-
         if not psutil:
             self.stats_updated.emit({"error": "psutil not installed"})
             return
 
-        # Initialize baseline counters
         last_net = psutil.net_io_counters()
         last_time = time.time()
-        # Warm up cpu_percent calculation
         psutil.cpu_percent(interval=None)
 
-        # Initialize GPU performance counter on Windows
-        gpu_query = None
-        gpu_counter = None
-        if sys.platform == "win32":
-            try:
-                import win32pdh
-                gpu_query = win32pdh.OpenQuery()
-                gpu_counter = win32pdh.AddCounter(gpu_query, r'\GPU Engine(*)\Utilization Percentage')
-                win32pdh.CollectQueryData(gpu_query)
-            except Exception:
-                gpu_query = None
-                gpu_counter = None
-
         while self._running:
+            # Wait while paused without consuming CPU
+            if not self._active_event.is_set():
+                self._close_gpu()
+                while self._running and not self._active_event.is_set():
+                    self._active_event.wait(timeout=0.2)
+                if not self._running:
+                    break
+                # Reset counters on wake so network deltas and CPU percentages start clean
+                last_net = psutil.net_io_counters()
+                last_time = time.time()
+                psutil.cpu_percent(interval=None)
+
             try:
                 # 1. CPU metrics
                 cpu_total = psutil.cpu_percent(interval=None)
@@ -105,7 +164,7 @@ class HardwareWorker(QThread):
                 mem_total_gb = mem.total / (1024 ** 3)
                 mem_free_gb = mem.available / (1024 ** 3)
 
-                # 3. Network speed delta (total live speed)
+                # 3. Network speed delta
                 curr_net = psutil.net_io_counters()
                 curr_time = time.time()
                 dt = max(0.1, curr_time - last_time)
@@ -117,17 +176,8 @@ class HardwareWorker(QThread):
                 last_net = curr_net
                 last_time = curr_time
 
-                # 4. Live GPU %
-                gpu_percent = 0.0
-                if gpu_query and gpu_counter:
-                    try:
-                        import win32pdh
-                        win32pdh.CollectQueryData(gpu_query)
-                        res = win32pdh.GetFormattedCounterArray(gpu_counter, win32pdh.PDH_FMT_DOUBLE)
-                        if isinstance(res, dict):
-                            gpu_percent = min(100.0, max(0.0, sum(v for v in res.values() if v > 0)))
-                    except Exception:
-                        gpu_percent = 0.0
+                # 4. GPU %
+                gpu_percent = self._sample_gpu()
 
                 # 5. Battery metrics
                 battery = psutil.sensors_battery()
@@ -148,27 +198,28 @@ class HardwareWorker(QThread):
                 minutes, _ = divmod(rem, 60)
                 uptime_str = f"{hours}h {minutes}m"
 
-                # 7. Top active processes (top 3 by CPU usage)
+                # 7. Top active processes (only query when enabled in settings)
                 top_procs = []
                 try:
-                    for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent']):
-                        try:
-                            info = p.info
-                            name = info.get('name') or "Process"
-                            # Skip Idle Process
-                            if "idle" in name.lower():
+                    from utils import config
+                    if config.load_hardware_show_top_consumers(False):
+                        for p in psutil.process_iter(['name', 'cpu_percent', 'memory_percent']):
+                            try:
+                                info = p.info
+                                name = info.get('name') or "Process"
+                                if "idle" in name.lower():
+                                    continue
+                                cpu_p = info.get('cpu_percent') or 0.0
+                                mem_p = info.get('memory_percent') or 0.0
+                                top_procs.append({
+                                    'name': name.replace('.exe', ''),
+                                    'cpu_percent': round(cpu_p, 1),
+                                    'memory_percent': round(mem_p, 1),
+                                })
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 continue
-                            cpu_p = info.get('cpu_percent') or 0.0
-                            mem_p = info.get('memory_percent') or 0.0
-                            top_procs.append({
-                                'name': name.replace('.exe', ''),
-                                'cpu_percent': round(cpu_p, 1),
-                                'memory_percent': round(mem_p, 1),
-                            })
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
-                    top_procs.sort(key=lambda x: (x['cpu_percent'], x['memory_percent']), reverse=True)
-                    top_procs = top_procs[:3]
+                        top_procs.sort(key=lambda x: (x['cpu_percent'], x['memory_percent']), reverse=True)
+                        top_procs = top_procs[:3]
                 except Exception:
                     top_procs = []
 
@@ -211,27 +262,20 @@ class HardwareWorker(QThread):
                     "timestamp": curr_time,
                 }
 
-                self.stats_updated.emit(data)
+                if self._running and self._active_event.is_set():
+                    self.stats_updated.emit(data)
 
-            except Exception as e:
-                pass
-
-            # Sleep poll_interval while checking if stopped
-            sleep_step = 0.1
-            elapsed = 0.0
-            while self._running and elapsed < self.poll_interval:
-                time.sleep(sleep_step)
-                elapsed += sleep_step
-
-        if gpu_query:
-            try:
-                import win32pdh
-                win32pdh.CloseQuery(gpu_query)
             except Exception:
                 pass
 
-    def stop(self):
-        self._running = False
+            # Responsive sleep in small steps so pause() responds instantly
+            elapsed = 0.0
+            step = 0.05
+            while self._running and self._active_event.is_set() and elapsed < self.poll_interval:
+                time.sleep(step)
+                elapsed += step
+
+        self._close_gpu()
 
 
 class HardwareService(QObject):
@@ -248,26 +292,32 @@ class HardwareService(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._worker = None
+        self._worker = HardwareWorker(poll_interval_ms=1000)
+        self._worker.stats_updated.connect(self._on_stats_updated)
+        self._worker.start()
         self.cached_stats = None
 
     def start_monitoring(self):
-        """Start background polling thread if not already running."""
-        if self._worker is not None and self._worker.isRunning():
-            return
-
-        self._worker = HardwareWorker(poll_interval_ms=1500)
-        self._worker.stats_updated.connect(self._on_stats_updated)
-        self._worker.start()
+        """Resume background polling thread with zero UI freeze."""
+        if self.cached_stats:
+            self.updated.emit(self.cached_stats)
+        if self._worker is not None:
+            if not self._worker.isRunning():
+                self._worker.start()
+            self._worker.resume()
 
     def stop_monitoring(self):
-        """Stop polling thread to preserve 0% background CPU usage."""
+        """Pause polling to preserve 0% background CPU usage."""
+        if self._worker is not None:
+            self._worker.pause()
+
+    def shutdown(self):
+        """Clean shutdown of background thread when app exits."""
         if self._worker is not None:
             self._worker.stop()
-            self._worker.wait(500)
+            self._worker.wait(1500)
             self._worker = None
 
     def _on_stats_updated(self, data: dict):
         self.cached_stats = data
         self.updated.emit(data)
-

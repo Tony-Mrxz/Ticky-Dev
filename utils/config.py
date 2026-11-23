@@ -424,5 +424,30 @@ def save_idle_translucent_timeout(value: int):
     save_config({"idle_translucent_timeout": int(value)})
 
 
+NOTCH_SHORTCUT_SLOTS = 6
+
+
+def load_notch_shortcuts():
+    """Load the notch dashboard shortcut tiles as exactly NOTCH_SHORTCUT_SLOTS {label, url} dicts."""
+    raw = load_config().get("notch_shortcuts", [])
+    slots = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", "")).strip()
+            url = str(item.get("url", "")).strip()
+            if label or url:
+                slots.append({"label": label, "url": url})
+    while len(slots) < NOTCH_SHORTCUT_SLOTS:
+        slots.append({"label": "", "url": ""})
+    return slots[:NOTCH_SHORTCUT_SLOTS]
+
+
+def save_notch_shortcuts(shortcuts_list):
+    """Save the notch dashboard shortcut tiles."""
+    save_config({"notch_shortcuts": list(shortcuts_list or [])[:NOTCH_SHORTCUT_SLOTS]})
+
+
 
 

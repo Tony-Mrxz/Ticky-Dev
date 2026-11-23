@@ -40,10 +40,35 @@ from widgets.notch_hardware import (
 from widgets.notch_calendar import (
     NotchCalendarWidget,
     NOTCH_WIDTH as CALENDAR_NOTCH_WIDTH,
+    PANEL_W as CALENDAR_PANEL_W,
+    NOTCH_PADDING_X as CALENDAR_PADDING_X,
+    NOTCH_PADDING_Y as CALENDAR_PADDING_Y,
     CALENDAR_UNHOVER_TIMEOUT_MS,
+)
+from widgets.notch_dashboard import (
+    NotchDashboardWidget,
+    NOTCH_WIDTH as DASHBOARD_NOTCH_WIDTH,
+    NOTCH_HEIGHT as DASHBOARD_NOTCH_HEIGHT,
+    PANEL_W as DASHBOARD_PANEL_W,
+    PANEL_H as DASHBOARD_PANEL_H,
+    NOTCH_PADDING_X as DASHBOARD_PADDING_X,
+    HEADER_ROW_H as DASHBOARD_HEADER_ROW_H,
+    SCREEN_APP_ROWS as DASHBOARD_APP_ROWS,
 )
 from utils.dictation_service import DictationService, DictationState
 from utils import text_inject
+from utils import bucket_service
+from widgets.notch_bucket import (
+    NotchBucketWidget,
+    NOTCH_WIDTH as BUCKET_NOTCH_WIDTH,
+    NOTCH_HEIGHT as BUCKET_NOTCH_HEIGHT,
+    PANEL_W as BUCKET_PANEL_W,
+    NOTCH_PADDING_X as BUCKET_PADDING_X,
+    NOTCH_PADDING_Y as BUCKET_PADDING_Y,
+    BUCKET_UNHOVER_TIMEOUT_MS,
+)
+from utils.screen_time import ScreenTimeService
+from utils.web_search import open_url
 from utils.version import APP_VERSION
 
 MEDIA_PREV_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24">
@@ -57,6 +82,10 @@ MEDIA_PAUSE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="
 </svg>"""
 MEDIA_NEXT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24">
 <path d="m14.58 11.19-7-5c-.31-.22-.71-.25-1.04-.08S6 6.62 6 7v10c0 .37.21.72.54.89.14.07.3.11.46.11.21 0 .41-.06.58-.19l7-5c.26-.19.42-.49.42-.81s-.16-.63-.42-.81M16 6h2v12h-2z"></path>
+</svg>"""
+
+BUCKET_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24">
+<path d="M20 3H4c-1.1 0-2 .9-2 2v3c0 1.1.9 2 2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-2 17H6V10h12zm1-12H4V5h16v3z"></path><path d="M9 12h6v2H9z"></path>
 </svg>"""
 
 TICK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="COLOR_PLACEHOLDER" viewBox="0 0 24 24">
@@ -213,11 +242,13 @@ class NotchWidget(QWidget):
         self.hover_cb = False
         self.hover_play = False
         self.hover_time_box = False
+        self.hover_bucket_btn = False
         self.is_active_focus = False
         self.task_completed_anim = False
 
         self.time_box_rect = QRect()
         self.add_btn_rect = QRect()
+        self.bucket_btn_rect = QRect()
         self.task_card_rect = QRect()
         self.task_cb_rect = QRect()
         self.task_play_rect = QRect()
@@ -495,6 +526,25 @@ class NotchWidget(QWidget):
         self.calendar_collapse_timer.setInterval(CALENDAR_UNHOVER_TIMEOUT_MS)
         self.calendar_collapse_timer.timeout.connect(self._on_calendar_unhover_timeout)
 
+        # Dashboard blocks under the State 2 header row
+        self.dashboard_widget = NotchDashboardWidget(self, provider=self._dashboard_snapshot, parent=self)
+        self.dashboard_widget.hide()
+        self.dashboard_widget.shortcut_activated.connect(self._open_dashboard_shortcut)
+        self.screen_time = ScreenTimeService.get_instance()
+        self.screen_time.start()
+
+        # Bucket stage: the drop target for files, links and text dragged onto the notch
+        self.bucket_in_notch = False
+        self._drag_over = False
+        self.bucket_widget = NotchBucketWidget(self, parent=self)
+        self.bucket_widget.hide()
+        self.bucket_widget.item_activated.connect(self._open_bucket_item)
+        self.bucket_collapse_timer = QTimer(self)
+        self.bucket_collapse_timer.setSingleShot(True)
+        self.bucket_collapse_timer.setInterval(BUCKET_UNHOVER_TIMEOUT_MS)
+        self.bucket_collapse_timer.timeout.connect(self._on_bucket_unhover_timeout)
+        self.setAcceptDrops(True)
+
         # Reminder due alert HUD state
         self.active_reminder_alert = None
         self.reminder_dismiss_rect = QRect()
@@ -664,7 +714,7 @@ class NotchWidget(QWidget):
             return False
         if getattr(self, "timer_in_notch", False) or getattr(self, "timer_is_running", False) or getattr(self, "media_in_notch", False) or getattr(self, "ai_chat_in_notch", False):
             return False
-        if getattr(self, "dictation_in_notch", False) or getattr(self, "app_search_in_notch", False) or getattr(self, "calendar_in_notch", False):
+        if getattr(self, "dictation_in_notch", False) or getattr(self, "app_search_in_notch", False) or getattr(self, "calendar_in_notch", False) or getattr(self, "bucket_in_notch", False):
             return False
         if getattr(self, "weather_in_notch", False) or getattr(self, "hardware_in_notch", False) or getattr(self, "reminders_in_notch", False):
             return False
@@ -802,7 +852,7 @@ class NotchWidget(QWidget):
             if self.timer_in_notch:
                 self.update_notch_timer_geometry()
             elif self.add_expanded:
-                self.animate_to(self.calc_add_expanded_width(), self.hover_h)
+                self.animate_to(self.calc_add_expanded_width(), self.expanded_row_height())
             else:
                 self.animate_to(self.hover_w, self.hover_h)
         self.update()
@@ -954,6 +1004,7 @@ class NotchWidget(QWidget):
                     or getattr(self, "weather_in_notch", False)
                     or getattr(self, "hardware_in_notch", False)
                     or getattr(self, "calendar_in_notch", False)
+                    or getattr(self, "bucket_in_notch", False)
                     or getattr(self, "empty_notes_showing", False)
                     or getattr(self, "timer_is_running", False)
                     or getattr(self, "add_expanded", False)
@@ -1346,9 +1397,11 @@ class NotchWidget(QWidget):
             if hasattr(self, "sub_pill") and self.sub_pill and hasattr(self.sub_pill, "btn_hardware"):
                 self.sub_pill.btn_hardware.setActive(False)
 
-        if entering_mode == "media":
-            self.notch_page = 0
-            self.page_dot_rects = []
+        # Pages belong to the plain State 2 hover only, so no stage may inherit
+        # a Weather/Hardware page that was active before it took over.
+        self.notch_page = 0
+        self.page_dot_rects = []
+        self._set_dashboard_visible(False)
 
         # 8d. Exit Calendar mode
         if getattr(self, "calendar_in_notch", False) and entering_mode != "calendar":
@@ -1357,6 +1410,16 @@ class NotchWidget(QWidget):
                 self.calendar_widget.hide()
             if hasattr(self, "calendar_collapse_timer"):
                 self.calendar_collapse_timer.stop()
+
+        # 8e. Exit Bucket stage
+        if getattr(self, "bucket_in_notch", False) and entering_mode != "bucket":
+            self.bucket_in_notch = False
+            self._drag_over = False
+            if hasattr(self, "bucket_widget") and self.bucket_widget:
+                self.bucket_widget.set_dragging(False)
+                self.bucket_widget.hide()
+            if hasattr(self, "bucket_collapse_timer"):
+                self.bucket_collapse_timer.stop()
 
         # 0. High priority exit for reminder alert (takes priority over everything)
         if entering_mode == "reminder_alert":
@@ -1759,6 +1822,10 @@ class NotchWidget(QWidget):
                 self.update_hardware_geometry()
         if getattr(self, "calendar_in_notch", False) and hasattr(self, "calendar_widget") and self.calendar_widget.isVisible():
             self.update_calendar_geometry()
+        if hasattr(self, "dashboard_widget") and self.dashboard_widget and self.dashboard_widget.isVisible():
+            self.update_dashboard_geometry()
+        if getattr(self, "bucket_in_notch", False) and hasattr(self, "bucket_widget") and self.bucket_widget.isVisible():
+            self.update_bucket_geometry()
 
     def _suspend_reminders_list_for_creation(self):
         """Hide the reminders list child while a task/note editor owns the extended area."""
@@ -1842,7 +1909,11 @@ class NotchWidget(QWidget):
 
     def expand_add_mode(self):
         self.unhover_collapse_timer.stop()
+        if getattr(self, "notch_page", 0) != 0:
+            # The capsule is State-2 page 0 content: drop out of Weather/Hardware first
+            self.set_notch_page(0)
         self.add_expanded = True
+        self._set_dashboard_visible(False)
         self.add_expand_anim.stop()
         self.add_expand_anim.setStartValue(self._add_expand_progress)
         self.add_expand_anim.setEndValue(1.0)
@@ -1882,9 +1953,11 @@ class NotchWidget(QWidget):
             # Back to the list the capsule was opened over; show the newest rows first
             self.notch_task_scroll = 0.0
             self.animate_to(stage[0], stage[1])
+        elif self.timer_in_notch:
+            self.animate_to(self.calc_notch_timer_width(), self.expanded_row_height())
         else:
-            target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-            self.animate_to(target_w, self.expanded_row_height())
+            # Plain State 2 again, which now means the dashboard returns with it
+            self.set_notch_page(0)
         self._resume_suspended_media()
 
     def start_notch_task_creation(self):
@@ -2194,7 +2267,7 @@ class NotchWidget(QWidget):
         if notch_contains or sub_pill_contains:
             self._is_hovered = True
             target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-            self.animate_to(target_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
+            self.animate_to(target_w, self.expanded_row_height())
             self.update()
         else:
             self._is_hovered = False
@@ -2430,7 +2503,7 @@ class NotchWidget(QWidget):
         if notch_contains or sub_pill_contains:
             self._is_hovered = True
             target_w = self.calc_notch_timer_width() if self.timer_in_notch else self.calc_expanded_width()
-            self.animate_to(target_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
+            self.animate_to(target_w, self.expanded_row_height())
             self.update()
         else:
             self._is_hovered = False
@@ -2459,7 +2532,12 @@ class NotchWidget(QWidget):
             self.sub_pill.set_vertical_mode(False)
             if hasattr(self.sub_pill, "btn_reminders"):
                 self.sub_pill.btn_reminders.setActive(False)
-        self.collapse_to_idle(force=True)
+        if getattr(self, "timer_in_notch", False) or getattr(self, "timer_is_running", False):
+            # A live timer outlives the reminder stage: shrink to the timer row, not to idle
+            self.timer_in_notch = True
+            self.update_notch_timer_geometry()
+        else:
+            self.collapse_to_idle(force=True)
 
         # Reminder creation is over: let a still-running timer resume its peek cycle
         if getattr(self, "timer_is_running", False) and self.timer_in_notch:
@@ -2481,7 +2559,7 @@ class NotchWidget(QWidget):
         sub_pill_contains = self.sub_pill.geometry().contains(cursor_pos) if (hasattr(self, "sub_pill") and self.sub_pill.isVisible()) else False
         if notch_contains or sub_pill_contains:
             self._is_hovered = True
-            self.animate_to(self.calc_expanded_width(), self.hover_h)
+            self.animate_to(self.calc_expanded_width(), self.expanded_row_height())
             self.update()
 
     def update_reminder_geometry(self):
@@ -2495,7 +2573,7 @@ class NotchWidget(QWidget):
             else:
                 time_w = float(self.time_box_rect.width()) if (hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.width() > 0) else 75.0
                 title_x = int(margin_x + time_w + 10)
-            top_cy = 28.0 if self.height() >= 54.0 else (self.height() / 2.0)
+            top_cy = 32.0 if self.height() >= 75.0 else 28.0
             title_y = int(top_cy - 18.0)
             title_w = max(100, int(self.width() - title_x - margin_x))
             title_h = 36
@@ -2775,6 +2853,7 @@ class NotchWidget(QWidget):
     MEDIA_STANDALONE_H = 78.0
     MEDIA_TIMER_GAP = 16.0
     TIMER_NOTCH_HEIGHT = 50
+    NOTCH_ROW_HEIGHT = 64  # one expanded row, the stage height before the dashboard blocks
 
     def expanded_row_height(self):
         """Height of the expanded row — the album art block needs the taller media stage, while timer uses compact height."""
@@ -2782,7 +2861,7 @@ class NotchWidget(QWidget):
             return int(self.MEDIA_STANDALONE_H)
         if getattr(self, "timer_in_notch", False):
             return int(self.TIMER_NOTCH_HEIGHT)
-        return self.hover_h
+        return self.NOTCH_ROW_HEIGHT
 
     def media_block_width(self):
         """Width of the [album art + info box] block reserved next to the timer row."""
@@ -2791,6 +2870,15 @@ class NotchWidget(QWidget):
     def media_timer_combined(self):
         """True when the media player and a timer share the expanded notch."""
         return getattr(self, "media_in_notch", False) and self.timer_in_notch
+
+    def _block_owns_area_below_row(self):
+        """True when an editor or list occupies the area under the header row.
+
+        The row then anchors to the top instead of centring on the notch height,
+        otherwise a timer row lands in the middle of the block it is paired with.
+        """
+        return bool(self.is_creating_task or self.is_creating_note or self.notes_in_notch
+                    or self.tasks_in_notch or getattr(self, "reminders_in_notch", False))
 
     def show_media_in_notch(self):
         """Expands notch into media player controls with album art, song title, and playback buttons."""
@@ -3343,7 +3431,7 @@ class NotchWidget(QWidget):
             # Don't force-kill a running timer; just leave dictation UI
             if self.timer_is_running:
                 self._is_hovered = False
-                self.animate_to(self.calc_notch_timer_width() if hasattr(self, "calc_notch_timer_width") else self.hover_w, self.expanded_row_height() if self.timer_in_notch else self.hover_h)
+                self.animate_to(self.calc_notch_timer_width() if hasattr(self, "calc_notch_timer_width") else self.hover_w, self.expanded_row_height())
                 self.update()
             else:
                 self.collapse_to_idle(force=True)
@@ -3567,6 +3655,8 @@ class NotchWidget(QWidget):
     # ---------------------------------------------------------------------------
     def _get_notch_page_dimensions(self, page: int):
         """Returns the optimal (width, height) tailored for the active notch page."""
+        if getattr(self, "bucket_in_notch", False):
+            return BUCKET_NOTCH_WIDTH, BUCKET_NOTCH_HEIGHT
         if page == 1:
             return WEATHER_NOTCH_WIDTH, WEATHER_NOTCH_HEIGHT
         elif page == 2:
@@ -3575,13 +3665,41 @@ class NotchWidget(QWidget):
             return HARDWARE_NOTCH_WIDTH, h
         else:
             expanded_w = self.calc_add_expanded_width() if getattr(self, "add_expanded", False) else self.calc_expanded_width()
-            return expanded_w, 64
+            if self._stage_owns_notch_off_page() or not self._is_hovered:
+                return expanded_w, self.NOTCH_ROW_HEIGHT
+            # The hovered State 2 row is the dashboard: header row on top, blocks below it.
+            return max(expanded_w, DASHBOARD_NOTCH_WIDTH), DASHBOARD_NOTCH_HEIGHT
+
+    def _stage_owns_notch_off_page(self):
+        """True when a stage other than the plain State 2 hover owns the notch.
+
+        Pages (Weather, Hardware) belong to State 2 alone, so every one of these
+        stages both blocks switching to a page and invalidates the current one.
+        """
+        return bool(getattr(self, "add_expanded", False)
+                    or getattr(self, "is_creating_task", False)
+                    or getattr(self, "is_creating_note", False)
+                    or getattr(self, "is_creating_reminder", False)
+                    or getattr(self, "notes_in_notch", False)
+                    or getattr(self, "empty_notes_showing", False)
+                    or getattr(self, "tasks_in_notch", False)
+                    or getattr(self, "reminders_in_notch", False)
+                    or getattr(self, "timer_in_notch", False)
+                    or getattr(self, "timer_is_running", False)
+                    or getattr(self, "media_in_notch", False)
+                    or getattr(self, "ai_chat_in_notch", False)
+                    or getattr(self, "dictation_in_notch", False)
+                    or getattr(self, "app_search_in_notch", False)
+                    or getattr(self, "calendar_in_notch", False)
+                    or getattr(self, "bucket_in_notch", False)
+                    or getattr(self, "active_reminder_alert", None) is not None
+                    or getattr(self, "active_update_alert", None) is not None)
 
     def set_notch_page(self, page: int):
         """Switch active page in State 2 (0=Tasks/Time, 1=Weather, 2=Hardware Monitor) with smooth adaptive expansion."""
-        if getattr(self, "media_in_notch", False):
-            return
         page = max(0, min(2, page))
+        if page != 0 and self._stage_owns_notch_off_page():
+            return
         self.notch_page = page
         target_w, target_h = self._get_notch_page_dimensions(page)
         self.hover_w = target_w
@@ -3590,8 +3708,16 @@ class NotchWidget(QWidget):
             self.animate_to(target_w, target_h, duration=160, easing=QEasingCurve.Type.OutQuad)
         self._update_notch_page_view()
 
+    def _dashboard_page_active(self):
+        """True when the plain State 2 hover is showing the dashboard page."""
+        return bool(self._is_hovered
+                    and self.notch_page == 0
+                    and not self._stage_owns_notch_off_page())
+
     def _update_notch_page_view(self):
         """Synchronize visibility and layout of page widgets according to notch_page."""
+        self._set_dashboard_visible(self._dashboard_page_active())
+
         if not self._is_hovered and self.height() <= 38:
             if hasattr(self, "weather_widget") and self.weather_widget:
                 self.weather_widget.hide()
@@ -3599,17 +3725,7 @@ class NotchWidget(QWidget):
                 self.hardware_widget.hide()
             return
 
-        if (getattr(self, "media_in_notch", False) or
-            getattr(self, "dictation_in_notch", False) or
-            getattr(self, "ai_chat_in_notch", False) or
-            getattr(self, "app_search_in_notch", False) or
-            getattr(self, "active_reminder_alert", None) is not None or
-            getattr(self, "active_update_alert", None) is not None or
-            getattr(self, "tasks_in_notch", False) or
-            getattr(self, "notes_in_notch", False) or
-            getattr(self, "calendar_in_notch", False) or
-            getattr(self, "is_creating_task", False) or
-            getattr(self, "is_creating_note", False)):
+        if self._stage_owns_notch_off_page():
             if hasattr(self, "weather_widget") and self.weather_widget:
                 self.weather_widget.hide()
             if hasattr(self, "hardware_widget") and self.hardware_widget:
@@ -3732,6 +3848,52 @@ class NotchWidget(QWidget):
             h = max(30, int(self.height() - top_y - 14))
             self.hardware_widget.setGeometry(margin_x, top_y, w, h)
 
+    def _set_dashboard_visible(self, visible):
+        widget = getattr(self, "dashboard_widget", None)
+        if widget is None:
+            return
+        if visible:
+            self.update_dashboard_geometry()
+            widget.show()
+            widget.raise_()
+        else:
+            widget.hide()
+
+    def update_dashboard_geometry(self):
+        """Keep the dashboard blocks centred under the State 2 header row."""
+        if hasattr(self, "dashboard_widget") and self.dashboard_widget:
+            w = min(DASHBOARD_PANEL_W, max(100, self.width() - DASHBOARD_PADDING_X * 2))
+            self.dashboard_widget.setGeometry((self.width() - w) // 2, DASHBOARD_HEADER_ROW_H,
+                                              w, DASHBOARD_PANEL_H)
+
+    def _dashboard_snapshot(self):
+        """Everything the dashboard blocks show, gathered from the live app state."""
+        if self.main_window and hasattr(self.main_window, "tasks"):
+            tasks = list(self.main_window.tasks)
+        else:
+            tasks = config.load_tasks()
+        apps = self.screen_time.top_today(DASHBOARD_APP_ROWS)
+        active_reminders = [r for r in config.load_reminders() if not r.get("completed", False)]
+        return {
+            "screen_total": self.screen_time.today_seconds(),
+            "apps": apps,
+            "tasks": len(tasks),
+            "notes": len(self.get_notes_list()),
+            "reminders": len(active_reminders),
+            "shortcuts": config.load_notch_shortcuts(),
+        }
+
+    def _open_dashboard_shortcut(self, index):
+        slots = config.load_notch_shortcuts()
+        url = (slots[index].get("url", "") if index < len(slots) else "").strip()
+        if not url:
+            if self.main_window and hasattr(self.main_window, "show_settings_menu"):
+                self.main_window.show_settings_menu()
+            return
+        if not url.lower().startswith(("http://", "https://")):
+            url = "https://" + url
+        open_url(url)
+
     def show_calendar_in_notch(self):
         """Expands the notch into the full calendar and events stage."""
         self.cancel_idle_animations()
@@ -3783,11 +3945,177 @@ class NotchWidget(QWidget):
     def update_calendar_geometry(self):
         """Keep the calendar panel bounds aligned within the notch."""
         if hasattr(self, "calendar_widget") and self.calendar_widget:
-            pad_x = 12
-            pad_y = 10
-            w = max(100, int(self.width() - (pad_x * 2)))
-            h = max(100, int(self.height() - (pad_y * 2)))
-            self.calendar_widget.setGeometry(pad_x, pad_y, w, h)
+            # Every column of the panel is fixed width, so any slack would be
+            # scattered between them as uneven gaps: hand it its natural width
+            # and centre that inside the notch borders.
+            w = min(CALENDAR_PANEL_W, max(100, self.width() - CALENDAR_PADDING_X * 2))
+            h = max(100, self.height() - CALENDAR_PADDING_Y * 2)
+            self.calendar_widget.setGeometry((self.width() - w) // 2, CALENDAR_PADDING_Y, w, h)
+
+    # ---------------------------------------------------------------------------
+    # Bucket stage: drag-and-drop capture
+    # ---------------------------------------------------------------------------
+    @staticmethod
+    def _mime_is_useful(mime):
+        if mime is None:
+            return False
+        if mime.hasUrls():
+            for url in mime.urls():
+                if url.scheme().lower() in ("http", "https", "file", "data"):
+                    return True
+        if mime.hasImage() or mime.hasText() or mime.hasHtml():
+            return True
+        for fmt in ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp", "image/gif", "image/tiff"):
+            if mime.hasFormat(fmt):
+                return True
+        for fmt in mime.formats():
+            if fmt.startswith("image/"):
+                return True
+        return False
+
+    def _drop_blocked_by_stage(self):
+        """Never hijack a notch the user is typing into or that is mid-listening."""
+        return bool(getattr(self, "is_creating_task", False)
+                    or getattr(self, "is_creating_note", False)
+                    or getattr(self, "is_creating_reminder", False)
+                    or getattr(self, "ai_chat_in_notch", False)
+                    or getattr(self, "dictation_in_notch", False)
+                    or getattr(self, "app_search_in_notch", False))
+
+    def show_bucket_in_notch(self, dragging=False):
+        """Open the notch as the bucket: a drop target plus the most recent captures."""
+        if not getattr(self, "bucket_in_notch", False):
+            self._exit_conflicting_modes("bucket")
+            self.bucket_in_notch = True
+            self._is_hovered = True
+        self.cancel_idle_animations()
+        self.bucket_collapse_timer.stop()
+        # A drag never fires enterEvent, so the idle translucency fade must be
+        # undone here or the drop target would stay half see-through.
+        self.wake_to_opaque(duration=200)
+        if not self.isVisible():
+            self.show()
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            self.bucket_widget.reload()
+            self.bucket_widget.set_dragging(dragging)
+            self.animate_to(BUCKET_NOTCH_WIDTH, BUCKET_NOTCH_HEIGHT)
+            self.update_bucket_geometry()
+            self.bucket_widget.show()
+            self.bucket_widget.raise_()
+        self.update()
+
+    def toggle_bucket_in_notch(self):
+        if getattr(self, "bucket_in_notch", False):
+            self.collapse_bucket()
+        else:
+            self.show_bucket_in_notch()
+
+    def collapse_bucket(self):
+        if not getattr(self, "bucket_in_notch", False):
+            return
+        self.bucket_in_notch = False
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            self.bucket_widget.set_dragging(False)
+            self.bucket_widget.hide()
+        self.bucket_collapse_timer.stop()
+        self.collapse_to_idle(force=True)
+
+    def _on_bucket_unhover_timeout(self):
+        if not getattr(self, "bucket_in_notch", False) or getattr(self, "_drag_over", False):
+            return
+        if getattr(self, "_is_dragging_out", False):
+            return
+        if self.geometry().contains(QCursor.pos()):
+            self.bucket_collapse_timer.start(BUCKET_UNHOVER_TIMEOUT_MS)
+            return
+        self.collapse_bucket()
+
+    def update_bucket_geometry(self):
+        """Keep the bucket panel centred inside the notch borders."""
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            w = min(BUCKET_PANEL_W, max(100, self.width() - BUCKET_PADDING_X * 2))
+            h = max(60, self.height() - BUCKET_PADDING_Y * 2)
+            self.bucket_widget.setGeometry((self.width() - w) // 2, BUCKET_PADDING_Y, w, h)
+
+    def _open_bucket_item(self, item_id):
+        for item in bucket_service.load_items():
+            if item.get("id") != item_id:
+                continue
+            if item.get("kind") == "text":
+                self.open_bucket_text_in_notepad(item)
+                return
+            bucket_service.open_item(item)
+            return
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            self.bucket_widget.reload()
+
+    def open_bucket_text_in_notepad(self, item):
+        """Dropped text belongs to the notepad, so a click hands it to the inline note editor."""
+        self._exit_conflicting_modes("creation")
+        self.start_notch_note_creation()
+        text = item.get("text", "")
+        if text:
+            self.note_input_edit.setPlainText(text)
+            cursor = self.note_input_edit.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            self.note_input_edit.setTextCursor(cursor)
+        self.note_input_edit.setFocus()
+
+    def dragEnterEvent(self, event):
+        if getattr(self, "_is_dragging_out", False):
+            event.ignore()
+            return
+        if self._drop_blocked_by_stage() or not self._mime_is_useful(event.mimeData()):
+            return
+        self._drag_over = True
+        self.show_bucket_in_notch(dragging=True)
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if getattr(self, "_is_dragging_out", False):
+            event.ignore()
+            return
+        if not getattr(self, "_drag_over", False) or not self._mime_is_useful(event.mimeData()):
+            event.ignore()
+            return
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        if getattr(self, "_is_dragging_out", False):
+            return
+        from PySide6.QtGui import QCursor
+        pos = self.mapFromGlobal(QCursor.pos())
+        if self.rect().contains(pos):
+            return
+        self._drag_over = False
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            self.bucket_widget.set_dragging(False)
+        if getattr(self, "bucket_in_notch", False):
+            self.bucket_collapse_timer.start(BUCKET_UNHOVER_TIMEOUT_MS)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        if getattr(self, "_is_dragging_out", False):
+            event.ignore()
+            return
+        self._drag_over = False
+        mime = event.mimeData()
+        useful = self._mime_is_useful(mime)
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.acceptProposedAction()
+        captured = bucket_service.capture_mime(mime) if useful else []
+        if hasattr(self, "bucket_widget") and self.bucket_widget:
+            self.bucket_widget.set_dragging(False)
+            self.bucket_widget.reload()
+            if captured:
+                plural = "s" if len(captured) > 1 else ""
+                self.bucket_widget.flash(f"Saved {len(captured)} item{plural}")
+            elif useful:
+                self.bucket_widget.flash("Item already in bucket")
+        if getattr(self, "bucket_in_notch", False):
+            self.bucket_collapse_timer.start(BUCKET_UNHOVER_TIMEOUT_MS)
 
     def get_notes_list(self):
         if self.main_window and hasattr(self.main_window, "notes"):
@@ -3827,6 +4155,11 @@ class NotchWidget(QWidget):
         if not force and getattr(self, "app_search_in_notch", False):
             return
         if not force and getattr(self, "calendar_in_notch", False):
+            return
+        if not force and getattr(self, "bucket_in_notch", False):
+            return
+        # A drag hovering the notch must not lose its drop target mid-flight.
+        if getattr(self, "_drag_over", False):
             return
         if self.timer_is_running:
             return
@@ -4386,7 +4719,7 @@ class NotchWidget(QWidget):
         # When in hover state, handle wheel scroll:
         # Case A: On Page 0, cursor over task card -> rotate tasks
         # Case B: Anywhere else on notch (or page 1/2) -> cycle notch pages (0 <-> 1 <-> 2)
-        if (self._is_hovered or self.height() > 38) and not self.add_expanded and not self.notes_in_notch and not self.tasks_in_notch and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not self.timer_is_running and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "media_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False):
+        if (self._is_hovered or self.height() > 38) and not self._stage_owns_notch_off_page():
             self._is_hovered = True
             if hasattr(self, "unhover_collapse_timer") and self.unhover_collapse_timer.isActive():
                 self.unhover_collapse_timer.stop()
@@ -4467,6 +4800,12 @@ class NotchWidget(QWidget):
                 super().enterEvent(event)
             return
 
+        if getattr(self, "bucket_in_notch", False):
+            self.bucket_collapse_timer.stop()
+            if event:
+                super().enterEvent(event)
+            return
+
         if getattr(self, "media_in_notch", False):
             self.notch_page = 0
             self.page_dot_rects = []
@@ -4499,7 +4838,7 @@ class NotchWidget(QWidget):
                     self.timer_stopped_collapse_timer.stop()
             if not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch:
                 self.update_notch_timer_geometry()
-        elif not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.notes_in_notch and not self.tasks_in_notch and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "reminders_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "calendar_in_notch", False) and not getattr(self, "media_in_notch", False):
+        elif not self._stage_owns_notch_off_page():
             self.pick_random_task()
             self.task_completed_anim = False
             target_w, target_h = self._get_notch_page_dimensions(self.notch_page)
@@ -4530,6 +4869,13 @@ class NotchWidget(QWidget):
         if getattr(self, "calendar_in_notch", False):
             if hasattr(self, "calendar_collapse_timer"):
                 self.calendar_collapse_timer.start(CALENDAR_UNHOVER_TIMEOUT_MS)
+            if event:
+                super().leaveEvent(event)
+            return
+
+        if getattr(self, "bucket_in_notch", False):
+            if not getattr(self, "_drag_over", False):
+                self.bucket_collapse_timer.start(BUCKET_UNHOVER_TIMEOUT_MS)
             if event:
                 super().leaveEvent(event)
             return
@@ -4648,6 +4994,7 @@ class NotchWidget(QWidget):
                 self.hover_cb = False
                 self.hover_card = False
                 self.hover_add_btn = False
+                self.hover_bucket_btn = False
                 self.timer_hover_play = False
                 self.timer_hover_restart = False
                 self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -4663,6 +5010,7 @@ class NotchWidget(QWidget):
             self.hover_cb = False
             self.hover_card = False
             self.hover_add_btn = False
+            self.hover_bucket_btn = False
             self.timer_hover_play = False
             self.timer_hover_restart = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -4677,6 +5025,7 @@ class NotchWidget(QWidget):
             self.hover_cb = False
             self.hover_card = False
             self.hover_add_btn = False
+            self.hover_bucket_btn = False
             self.timer_hover_play = False
             self.timer_hover_restart = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -4898,22 +5247,25 @@ class NotchWidget(QWidget):
                     self.update()
             else:
                 new_hover_btn = self.add_btn_rect.contains(pos)
+                new_hover_bucket = self.bucket_btn_rect.contains(pos)
                 new_hover_card = self.task_card_rect.contains(pos)
                 new_hover_cb = self.task_cb_rect.contains(pos)
                 new_hover_play = self.task_play_rect.contains(pos)
                 new_hover_time = hasattr(self, "time_box_rect") and self.time_box_rect.isValid() and self.time_box_rect.contains(pos)
 
-                if new_hover_btn or new_hover_card or new_hover_cb or new_hover_play or new_hover_time:
+                if new_hover_btn or new_hover_bucket or new_hover_card or new_hover_cb or new_hover_play or new_hover_time:
                     self.setCursor(Qt.CursorShape.PointingHandCursor)
                 else:
                     self.setCursor(Qt.CursorShape.ArrowCursor)
 
                 if (new_hover_btn != self.hover_add_btn or
+                    new_hover_bucket != self.hover_bucket_btn or
                     new_hover_card != self.hover_card or
                     new_hover_cb != self.hover_cb or
                     new_hover_play != self.hover_play or
                     new_hover_time != getattr(self, "hover_time_box", False)):
                     self.hover_add_btn = new_hover_btn
+                    self.hover_bucket_btn = new_hover_bucket
                     self.hover_card = new_hover_card
                     self.hover_cb = new_hover_cb
                     self.hover_play = new_hover_play
@@ -5061,8 +5413,7 @@ class NotchWidget(QWidget):
                 self.hovered_task_idx = None
                 self.hovered_task_cb_idx = None
                 self.task_completed_anim = False
-                self.hover_w = self.calc_expanded_width()
-                self.animate_to(self.hover_w, self.hover_h)
+                self.set_notch_page(0)
             else:
                 self.show_tasks_in_notch()
             self.update()
@@ -5124,7 +5475,7 @@ class NotchWidget(QWidget):
                 else:
                     self.collapse_to_idle()
             else:
-                self.animate_to(self.calc_expanded_width(), self.hover_h)
+                self.set_notch_page(0)
                 self.update()
 
         QTimer.singleShot(350, finalize_completion)
@@ -5168,6 +5519,10 @@ class NotchWidget(QWidget):
                 self.update_weather_geometry()
             if getattr(self, "hardware_in_notch", False):
                 self.update_hardware_geometry()
+            if hasattr(self, "dashboard_widget") and self.dashboard_widget and self.dashboard_widget.isVisible():
+                self.update_dashboard_geometry()
+            if getattr(self, "bucket_in_notch", False) and hasattr(self, "bucket_widget") and self.bucket_widget.isVisible():
+                self.update_bucket_geometry()
 
         def on_anim_finished():
             self.ensure_stays_on_top()
@@ -5208,6 +5563,10 @@ class NotchWidget(QWidget):
 
             # Calendar mode (calendar widget handles clicks)
             if getattr(self, "calendar_in_notch", False):
+                return
+
+            # Bucket mode (chip buttons handle clicks)
+            if getattr(self, "bucket_in_notch", False):
                 return
 
             # Voice dictation cancel (×) - always interactive regardless of notch height
@@ -5392,6 +5751,9 @@ class NotchWidget(QWidget):
                     if self.add_btn_rect.contains(pos):
                         self.expand_add_mode()
                         return
+                    if self.bucket_btn_rect.contains(pos):
+                        self.toggle_bucket_in_notch()
+                        return
                     if self.task_play_rect.contains(pos):
                         self.on_play_task_clicked()
                         return
@@ -5447,7 +5809,7 @@ class NotchWidget(QWidget):
             h = float(self.height())
 
         # Scale curve radiuses smoothly with height based on base State 2 height (64px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 64.0)) - float(self.idle_h))))
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(self.NOTCH_ROW_HEIGHT) - float(self.idle_h))))
         ear_r = 7.0 + open_progress * 3.0      # 7px to 10px
         corner_r = 12.0 + open_progress * 4.0  # 12px to 16px
 
@@ -5500,7 +5862,7 @@ class NotchWidget(QWidget):
             self.sub_pill.recenter_under_notch()
 
         # Scale curve radiuses smoothly with height based on base State 2 height (64px)
-        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(getattr(self, "hover_h", 64.0)) - float(self.idle_h))))
+        open_progress = max(0.0, min(1.0, (h - float(self.idle_h)) / max(1.0, float(self.NOTCH_ROW_HEIGHT) - float(self.idle_h))))
 
         # Construct notch silhouette path (pill in Dynamic Island mode, attached notch with ears in Top Notch mode)
         path = self.get_notch_silhouette_path(w, h)
@@ -5584,6 +5946,11 @@ class NotchWidget(QWidget):
 
         # Embedded Calendar Stage HUD
         if getattr(self, "calendar_in_notch", False):
+            painter.restore()
+            return
+
+        # Bucket Stage HUD (the bucket child widget paints the rest)
+        if getattr(self, "bucket_in_notch", False):
             painter.restore()
             return
 
@@ -5780,10 +6147,7 @@ class NotchWidget(QWidget):
 
     def draw_page_indicator_dots(self, painter, w, h, accent_color):
         """Draws the bottom 3-dot page indicator for State 2 (Page 0, 1, 2)."""
-        if getattr(self, "media_in_notch", False):
-            self.page_dot_rects = []
-            return
-        if (self._is_hovered or h >= 48.0) and not self.tasks_in_notch and not self.notes_in_notch and not self.add_expanded and not self.is_creating_task and not self.is_creating_note and not self.timer_in_notch and not getattr(self, "dictation_in_notch", False) and not getattr(self, "app_search_in_notch", False) and not getattr(self, "ai_chat_in_notch", False) and not getattr(self, "calendar_in_notch", False) and not getattr(self, "media_in_notch", False) and getattr(self, "active_reminder_alert", None) is None and getattr(self, "active_update_alert", None) is None:
+        if (self._is_hovered or h >= 48.0) and not self._stage_owns_notch_off_page():
             self.page_dot_rects = []
             num_pages = 3
             active_page = getattr(self, "notch_page", 0)
@@ -5797,11 +6161,7 @@ class NotchWidget(QWidget):
                            (active_dot_w if active_page == 2 else inactive_dot_w)
 
             start_dot_x = (w - total_dots_w) / 2.0
-            # Keep dots comfortably spaced below content on Page 0 (~6.5px gap), and near bezel bottom on remaining pages
-            if active_page == 0:
-                dot_y = 52.5
-            else:
-                dot_y = h - 8.5
+            dot_y = h - 14.0
             cur_x = start_dot_x
 
             for p_idx in range(num_pages):
@@ -5946,6 +6306,8 @@ class NotchWidget(QWidget):
             [Time + Date Box] [Task Card (Checkbox + Text + Start Task Button)] [Add Button / Capsule]
         """
         font_family = config.load_font_family("DM Sans")
+        # Only the dashboard branch below re-arms it, so every other mode drops the hitbox.
+        self.bucket_btn_rect = QRect()
 
         spec = self.clock_style_spec()
         font_time, font_date = self.make_clock_fonts(10, 8)
@@ -5985,7 +6347,7 @@ class NotchWidget(QWidget):
 
         # A media row beside the timer is taller, so that row centres on the notch height
         media_shares_row = self.media_timer_combined()
-        if self.timer_in_notch or media_shares_row:
+        if (self.timer_in_notch or media_shares_row) and not self._block_owns_area_below_row():
             top_cy = h / 2.0
         elif h >= 54.0:
             top_cy = 32.0 if h >= 75.0 else 28.0
@@ -6273,6 +6635,7 @@ class NotchWidget(QWidget):
         # -------------------------------------------------------------
         if self.timer_in_notch:
             creating_reminder = getattr(self, "is_creating_reminder", False) and getattr(self, "reminders_in_notch", False)
+            creating_note = self.is_creating_note
             show_time_box = (not self.timer_is_running) or self.timer_time_peek_active
             if creating_reminder:
                 # Clock time must not interfere while the reminder creator is open
@@ -6306,13 +6669,13 @@ class NotchWidget(QWidget):
                 card_w = card_pad_h + play_size + 6.0 + restart_size + 8.0 + w_timer_text + card_pad_h
 
             card_h = 36.0
-            add_w = 0.0 if creating_reminder else (capsule_w if self.add_expanded else add_btn_size)
+            add_w = 0.0 if (creating_reminder or creating_note) else (capsule_w if self.add_expanded else add_btn_size)
             total_content_w = (time_draw_w + gap_elements if show_time_box else 0.0) + card_w + gap_elements + add_w
             media_block_w = self.media_block_width() if media_shares_row else 0.0
             row_w = total_content_w
             if media_shares_row:
                 row_w += self.MEDIA_TIMER_GAP + media_block_w
-            if creating_reminder:
+            if creating_reminder or creating_note:
                 start_x = margin_x
             else:
                 start_x = max(margin_x, (w - row_w) / 2.0)
@@ -6501,6 +6864,17 @@ class NotchWidget(QWidget):
                 self.sub_task_rect = QRect()
                 self.sub_note_rect = QRect()
                 self.sub_reminder_rect = QRect()
+                return
+
+            if creating_note:
+                # The note editor owns the area below, so its save/cancel pill
+                # replaces the add control instead of sharing the row with it
+                self.add_btn_rect = QRect()
+                self.add_toggle_rect = QRect()
+                self.sub_task_rect = QRect()
+                self.sub_note_rect = QRect()
+                self.sub_reminder_rect = QRect()
+                self.draw_note_action_pill(painter, w, top_cy, opacity)
                 return
 
             # Add Button / Capsule placement directly following the timer card
@@ -6733,149 +7107,7 @@ class NotchWidget(QWidget):
                 self.sub_note_rect = QRect()
                 self.add_toggle_rect = QRect()
 
-                # Action pill placed above the text card (right aligned to the note card)
-                is_editing = (getattr(self, "editing_note_index", None) is not None)
-                pill_w = 108.0 if is_editing else 72.0
-                pill_h = 28.0
-                pill_x = w - margin_x - pill_w
-                pill_y = top_cy - (pill_h / 2.0)
-                pill_rect = QRectF(pill_x, pill_y, pill_w, pill_h)
-
-                pill_bg = QColor(theme.SEC_CARD_COLOR)
-                pill_bg.setAlpha(int(190 * opacity))
-                pill_border = QColor(theme.BORDER_COLOR)
-                if not pill_border.isValid():
-                    pill_border = QColor(255, 255, 255, int(30 * opacity))
-                else:
-                    pill_border.setAlpha(int(max(30, pill_border.alpha()) * opacity))
-                painter.setBrush(QBrush(pill_bg))
-                painter.setPen(QPen(pill_border, 1.0))
-                painter.drawRoundedRect(pill_rect, 14.0, 14.0)
-
-                clip_pill = QPainterPath()
-                clip_pill.addRoundedRect(pill_rect, 14.0, 14.0)
-
-                if is_editing:
-                    # 3-segment pill: [ ✓ | ✕ | 🗑 ] (Save, Cancel, Delete)
-                    btn_w = pill_w / 3.0
-
-                    # 1. Tick button [✓] (Save)
-                    tick_rect = QRectF(pill_x, pill_y, btn_w, pill_h)
-                    self.note_tick_rect = QRect(int(tick_rect.x()), int(tick_rect.y()), int(tick_rect.width()), int(tick_rect.height()))
-
-                    if self.hover_note_tick:
-                        painter.save()
-                        painter.setClipPath(clip_pill)
-                        painter.setBrush(QBrush(QColor(48, 209, 88, int(55 * opacity))))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(tick_rect)
-                        painter.restore()
-                        t_col = QColor("#30D158")
-                    else:
-                        t_col = QColor(theme.TEXT_SECONDARY)
-
-                    t_svg = TICK_SVG.replace("COLOR_PLACEHOLDER", t_col.name())
-                    r_tick = QSvgRenderer(QByteArray(t_svg.encode("utf-8")))
-                    tick_icon_rect = QRectF(pill_x + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
-                    r_tick.render(painter, tick_icon_rect)
-
-                    # Separator 1
-                    sep1_x = pill_x + btn_w
-                    painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
-                    painter.drawLine(QPointF(sep1_x, pill_y + 4.0), QPointF(sep1_x, pill_y + pill_h - 4.0))
-
-                    # 2. Cross button [✕] (Cancel)
-                    cross_rect = QRectF(pill_x + btn_w, pill_y, btn_w, pill_h)
-                    self.note_cross_rect = QRect(int(cross_rect.x()), int(cross_rect.y()), int(cross_rect.width()), int(cross_rect.height()))
-
-                    if self.hover_note_cross:
-                        painter.save()
-                        painter.setClipPath(clip_pill)
-                        painter.setBrush(QBrush(QColor(255, 255, 255, int(25 * opacity))))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(cross_rect)
-                        painter.restore()
-                        c_col = QColor("#FFFFFF")
-                    else:
-                        c_col = QColor(theme.TEXT_SECONDARY)
-
-                    c_svg = CROSS_SVG.replace("COLOR_PLACEHOLDER", c_col.name())
-                    r_cross = QSvgRenderer(QByteArray(c_svg.encode("utf-8")))
-                    cross_icon_rect = QRectF(pill_x + btn_w + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
-                    r_cross.render(painter, cross_icon_rect)
-
-                    # Separator 2
-                    sep2_x = pill_x + (btn_w * 2.0)
-                    painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
-                    painter.drawLine(QPointF(sep2_x, pill_y + 4.0), QPointF(sep2_x, pill_y + pill_h - 4.0))
-
-                    # 3. Delete button [🗑] (Delete)
-                    del_rect = QRectF(pill_x + (btn_w * 2.0), pill_y, btn_w, pill_h)
-                    self.note_delete_rect = QRect(int(del_rect.x()), int(del_rect.y()), int(del_rect.width()), int(del_rect.height()))
-
-                    if self.hover_note_delete:
-                        painter.save()
-                        painter.setClipPath(clip_pill)
-                        painter.setBrush(QBrush(QColor(255, 69, 58, int(55 * opacity))))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(del_rect)
-                        painter.restore()
-                        d_col = QColor("#FF453A")
-                    else:
-                        d_col = QColor(theme.TEXT_SECONDARY)
-
-                    d_svg = NOTE_DELETE_SVG.replace("COLOR_PLACEHOLDER", d_col.name())
-                    r_del = QSvgRenderer(QByteArray(d_svg.encode("utf-8")))
-                    del_icon_rect = QRectF(pill_x + (btn_w * 2.0) + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
-                    r_del.render(painter, del_icon_rect)
-                else:
-                    self.note_delete_rect = QRect()
-                    btn_w = pill_w / 2.0
-
-                    # 1. Tick button [✓] (Save)
-                    tick_rect = QRectF(pill_x, pill_y, btn_w, pill_h)
-                    self.note_tick_rect = QRect(int(tick_rect.x()), int(tick_rect.y()), int(tick_rect.width()), int(tick_rect.height()))
-
-                    if self.hover_note_tick:
-                        painter.save()
-                        painter.setClipPath(clip_pill)
-                        painter.setBrush(QBrush(QColor(48, 209, 88, int(55 * opacity))))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(tick_rect)
-                        painter.restore()
-                        t_col = QColor("#30D158")
-                    else:
-                        t_col = QColor(theme.TEXT_SECONDARY)
-
-                    t_svg = TICK_SVG.replace("COLOR_PLACEHOLDER", t_col.name())
-                    r_tick = QSvgRenderer(QByteArray(t_svg.encode("utf-8")))
-                    tick_icon_rect = QRectF(pill_x + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
-                    r_tick.render(painter, tick_icon_rect)
-
-                    # Center separator line
-                    sep_x = pill_x + btn_w
-                    painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
-                    painter.drawLine(QPointF(sep_x, pill_y + 4.0), QPointF(sep_x, pill_y + pill_h - 4.0))
-
-                    # 2. Cross button [✕] (Cancel)
-                    cross_rect = QRectF(pill_x + btn_w, pill_y, btn_w, pill_h)
-                    self.note_cross_rect = QRect(int(cross_rect.x()), int(cross_rect.y()), int(cross_rect.width()), int(cross_rect.height()))
-
-                    if self.hover_note_cross:
-                        painter.save()
-                        painter.setClipPath(clip_pill)
-                        painter.setBrush(QBrush(QColor(255, 69, 58, int(55 * opacity))))
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawRect(cross_rect)
-                        painter.restore()
-                        c_col = QColor("#FF453A")
-                    else:
-                        c_col = QColor(theme.TEXT_SECONDARY)
-
-                    c_svg = CROSS_SVG.replace("COLOR_PLACEHOLDER", c_col.name())
-                    r_cross = QSvgRenderer(QByteArray(c_svg.encode("utf-8")))
-                    cross_icon_rect = QRectF(pill_x + btn_w + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
-                    r_cross.render(painter, cross_icon_rect)
+                self.draw_note_action_pill(painter, w, top_cy, opacity)
                 return
 
             if getattr(self, "notch_page", 0) == 0:
@@ -7071,6 +7303,43 @@ class NotchWidget(QWidget):
                     p_len = 5.0
                     painter.drawLine(QPointF(ac_x - p_len, ac_y), QPointF(ac_x + p_len, ac_y))
                     painter.drawLine(QPointF(ac_x, ac_y - p_len), QPointF(ac_x, ac_y + p_len))
+
+                    # Bucket button sits beside the add button and belongs to the dashboard page alone.
+                    if self._dashboard_page_active():
+                        bucket_x = add_btn_x + add_btn_size + gap_elements
+                        bucket_y = top_cy - (add_btn_size / 2.0)
+                        bucket_rect = QRectF(bucket_x, bucket_y, add_btn_size, add_btn_size)
+                        self.bucket_btn_rect = QRect(int(bucket_x - 2), int(bucket_y - 2),
+                                                     int(add_btn_size + 4), int(add_btn_size + 4))
+                        if self.hover_bucket_btn:
+                            bucket_bg = QColor(accent_color)
+                            bucket_bg.setAlphaF(norm_opacity)
+                        else:
+                            bucket_bg = QColor(255, 255, 255, int(26 * norm_opacity))
+                        painter.setBrush(QBrush(bucket_bg))
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawEllipse(bucket_rect)
+
+                        bucket_icon_size = 15.0
+                        bucket_icon_rect = QRectF(bucket_x + (add_btn_size - bucket_icon_size) / 2.0,
+                                                  bucket_y + (add_btn_size - bucket_icon_size) / 2.0,
+                                                  bucket_icon_size, bucket_icon_size)
+                        bucket_svg = BUCKET_SVG.replace("COLOR_PLACEHOLDER", "#FFFFFF")
+                        renderer = QSvgRenderer(QByteArray(bucket_svg.encode("utf-8")))
+                        painter.setOpacity(norm_opacity)
+                        renderer.render(painter, bucket_icon_rect)
+                        painter.setOpacity(1.0)
+
+                        # Small accent badge dot when bucket contains items
+                        try:
+                            if len(bucket_service.load_items()) > 0:
+                                dot_r = 5.0
+                                dot_rect = QRectF(bucket_x + add_btn_size - dot_r - 1.0, bucket_y + 1.0, dot_r, dot_r)
+                                painter.setBrush(QBrush(QColor(accent_color)))
+                                painter.setPen(Qt.PenStyle.NoPen)
+                                painter.drawEllipse(dot_rect)
+                        except Exception:
+                            pass
                 else:
                     self.task_card_rect = QRect()
                     self.task_cb_rect = QRect()
@@ -7498,6 +7767,153 @@ class NotchWidget(QWidget):
                         painter.setPen(QColor(theme.TEXT_SECONDARY))
                         pag_rect = QRectF(0, card_y + card_h + 3.0, w, 14.0)
                         painter.drawText(pag_rect, Qt.AlignmentFlag.AlignCenter, page_str)
+
+    def draw_note_action_pill(self, painter, w, top_cy, opacity):
+        """The [save | cancel] (and [delete] while editing) pill above the note editor."""
+        margin_x = 15.0
+        is_editing = (getattr(self, "editing_note_index", None) is not None)
+        pill_w = 108.0 if is_editing else 72.0
+        pill_h = 28.0
+        pill_x = w - margin_x - pill_w
+        pill_y = top_cy - (pill_h / 2.0)
+        pill_rect = QRectF(pill_x, pill_y, pill_w, pill_h)
+
+        pill_bg = QColor(theme.SEC_CARD_COLOR)
+        pill_bg.setAlpha(int(190 * opacity))
+        pill_border = QColor(theme.BORDER_COLOR)
+        if not pill_border.isValid():
+            pill_border = QColor(255, 255, 255, int(30 * opacity))
+        else:
+            pill_border.setAlpha(int(max(30, pill_border.alpha()) * opacity))
+        painter.setBrush(QBrush(pill_bg))
+        painter.setPen(QPen(pill_border, 1.0))
+        painter.drawRoundedRect(pill_rect, 14.0, 14.0)
+
+        clip_pill = QPainterPath()
+        clip_pill.addRoundedRect(pill_rect, 14.0, 14.0)
+
+        if is_editing:
+            # 3-segment pill: [ ✓ | ✕ | 🗑 ] (Save, Cancel, Delete)
+            btn_w = pill_w / 3.0
+
+            # 1. Tick button [✓] (Save)
+            tick_rect = QRectF(pill_x, pill_y, btn_w, pill_h)
+            self.note_tick_rect = QRect(int(tick_rect.x()), int(tick_rect.y()), int(tick_rect.width()), int(tick_rect.height()))
+
+            if self.hover_note_tick:
+                painter.save()
+                painter.setClipPath(clip_pill)
+                painter.setBrush(QBrush(QColor(48, 209, 88, int(55 * opacity))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(tick_rect)
+                painter.restore()
+                t_col = QColor("#30D158")
+            else:
+                t_col = QColor(theme.TEXT_SECONDARY)
+
+            t_svg = TICK_SVG.replace("COLOR_PLACEHOLDER", t_col.name())
+            r_tick = QSvgRenderer(QByteArray(t_svg.encode("utf-8")))
+            tick_icon_rect = QRectF(pill_x + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
+            r_tick.render(painter, tick_icon_rect)
+
+            # Separator 1
+            sep1_x = pill_x + btn_w
+            painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
+            painter.drawLine(QPointF(sep1_x, pill_y + 4.0), QPointF(sep1_x, pill_y + pill_h - 4.0))
+
+            # 2. Cross button [✕] (Cancel)
+            cross_rect = QRectF(pill_x + btn_w, pill_y, btn_w, pill_h)
+            self.note_cross_rect = QRect(int(cross_rect.x()), int(cross_rect.y()), int(cross_rect.width()), int(cross_rect.height()))
+
+            if self.hover_note_cross:
+                painter.save()
+                painter.setClipPath(clip_pill)
+                painter.setBrush(QBrush(QColor(255, 255, 255, int(25 * opacity))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(cross_rect)
+                painter.restore()
+                c_col = QColor("#FFFFFF")
+            else:
+                c_col = QColor(theme.TEXT_SECONDARY)
+
+            c_svg = CROSS_SVG.replace("COLOR_PLACEHOLDER", c_col.name())
+            r_cross = QSvgRenderer(QByteArray(c_svg.encode("utf-8")))
+            cross_icon_rect = QRectF(pill_x + btn_w + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
+            r_cross.render(painter, cross_icon_rect)
+
+            # Separator 2
+            sep2_x = pill_x + (btn_w * 2.0)
+            painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
+            painter.drawLine(QPointF(sep2_x, pill_y + 4.0), QPointF(sep2_x, pill_y + pill_h - 4.0))
+
+            # 3. Delete button [🗑] (Delete)
+            del_rect = QRectF(pill_x + (btn_w * 2.0), pill_y, btn_w, pill_h)
+            self.note_delete_rect = QRect(int(del_rect.x()), int(del_rect.y()), int(del_rect.width()), int(del_rect.height()))
+
+            if self.hover_note_delete:
+                painter.save()
+                painter.setClipPath(clip_pill)
+                painter.setBrush(QBrush(QColor(255, 69, 58, int(55 * opacity))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(del_rect)
+                painter.restore()
+                d_col = QColor("#FF453A")
+            else:
+                d_col = QColor(theme.TEXT_SECONDARY)
+
+            d_svg = NOTE_DELETE_SVG.replace("COLOR_PLACEHOLDER", d_col.name())
+            r_del = QSvgRenderer(QByteArray(d_svg.encode("utf-8")))
+            del_icon_rect = QRectF(pill_x + (btn_w * 2.0) + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
+            r_del.render(painter, del_icon_rect)
+        else:
+            self.note_delete_rect = QRect()
+            btn_w = pill_w / 2.0
+
+            # 1. Tick button [✓] (Save)
+            tick_rect = QRectF(pill_x, pill_y, btn_w, pill_h)
+            self.note_tick_rect = QRect(int(tick_rect.x()), int(tick_rect.y()), int(tick_rect.width()), int(tick_rect.height()))
+
+            if self.hover_note_tick:
+                painter.save()
+                painter.setClipPath(clip_pill)
+                painter.setBrush(QBrush(QColor(48, 209, 88, int(55 * opacity))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(tick_rect)
+                painter.restore()
+                t_col = QColor("#30D158")
+            else:
+                t_col = QColor(theme.TEXT_SECONDARY)
+
+            t_svg = TICK_SVG.replace("COLOR_PLACEHOLDER", t_col.name())
+            r_tick = QSvgRenderer(QByteArray(t_svg.encode("utf-8")))
+            tick_icon_rect = QRectF(pill_x + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
+            r_tick.render(painter, tick_icon_rect)
+
+            # Center separator line
+            sep_x = pill_x + btn_w
+            painter.setPen(QPen(QColor(255, 255, 255, int(35 * opacity)), 1.0))
+            painter.drawLine(QPointF(sep_x, pill_y + 4.0), QPointF(sep_x, pill_y + pill_h - 4.0))
+
+            # 2. Cross button [✕] (Cancel)
+            cross_rect = QRectF(pill_x + btn_w, pill_y, btn_w, pill_h)
+            self.note_cross_rect = QRect(int(cross_rect.x()), int(cross_rect.y()), int(cross_rect.width()), int(cross_rect.height()))
+
+            if self.hover_note_cross:
+                painter.save()
+                painter.setClipPath(clip_pill)
+                painter.setBrush(QBrush(QColor(255, 69, 58, int(55 * opacity))))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(cross_rect)
+                painter.restore()
+                c_col = QColor("#FF453A")
+            else:
+                c_col = QColor(theme.TEXT_SECONDARY)
+
+            c_svg = CROSS_SVG.replace("COLOR_PLACEHOLDER", c_col.name())
+            r_cross = QSvgRenderer(QByteArray(c_svg.encode("utf-8")))
+            cross_icon_rect = QRectF(pill_x + btn_w + (btn_w / 2.0) - 7.0, pill_y + (pill_h / 2.0) - 7.0, 14.0, 14.0)
+            r_cross.render(painter, cross_icon_rect)
+
 
     def draw_typewriter_text(self, painter, w, h, opacity, accent_col):
         """Draw live typed text with smooth caret glide and smooth 6-character ribbon scroll."""
